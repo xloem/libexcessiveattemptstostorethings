@@ -96,15 +96,7 @@ class PeerManager(electrumx.server.peers.PeerManager):
         return result
 
     async def transaction_id_from_pos(self, height, tx_pos, merkle=False):
-        try:
-            return await self.request(dict if merkle else str, 'blockchain.transaction.id_from_pos', height, tx_pos, merkle)
-        except aiorpcx.RPCError as error:
-            if tx_pos == 0 and error.args[0] == electrumx.server.session.BAD_REQUEST:
-                # if there is no tx_pos=0 then the server does not include coinbsae transactions
-                self._active_peer.bad = True
-                return await self.transaction_id_from_pos(height, tx_pos, merkle)
-            else:
-                raise
+        return await self.request(dict if merkle else str, 'blockchain.transaction.id_from_pos', height, tx_pos, merkle)
 
     async def blockheader(self, height):
         hex = await self.request(str, 'blockchain.block.header', height)
@@ -174,6 +166,11 @@ class PeerManager(electrumx.server.peers.PeerManager):
             raise BadPeerError(f'our hash {our_hash}@{check_height} and '
                                f'theirs {their_hash}@{check_height} differ')
 
+        # verify we can get coinbase txids
+        message = 'blockchain.transaction.id_from_pos'
+        genesis_coinbase_txid = await session.send_request(message, [0, 0])
+        assert_good(message, genesis_coinbase_txid, str)
+
         if our_height < their_height:
             message = 'blockchain.block.header'
             their_header = await session.send_request(message, [their_height])
@@ -206,5 +203,6 @@ class ElectrumXClient:
             block = Block(height, self.peermanager)
             self._blocks[height] = block
         return block
+
     async def tx(self, blockhash, blockheight, txhash, txpos, verbose = False):
         return await self.peermanager.tx(txhash, verbose)
