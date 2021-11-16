@@ -4,7 +4,11 @@ from typing import List, Any, Iterable
 class Module:
     Item = namedtuple('Item', 'name time id')
     async def name(self):
-        return self.__class__.__name__
+        name = self.__class__.__name__
+        if name.endswith('Module'):
+            return name[:-len('Module')]
+        else:
+            return name
     async def submodules(self) -> Iterable['Module']:
         return []
     async def items(self) -> Iterable[Item]:
