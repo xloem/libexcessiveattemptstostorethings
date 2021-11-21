@@ -12,12 +12,17 @@ class BlockchainModule(BMBase):
         super().__init__(impl)
         self.blocks = BlockchainBlocksModule(self.blockchain)
         self._init = False
+    async def init(self):
+        await self.blockchain.init()
+        self._init = True
+    async def delete(self):
+        await self.blockchain.delete()
+        self._init = False
     async def name(self):
         return self.blockchain.name
     async def submodules(self):
         if not self._init:
-            await self.blockchain.init()
-            self._init = True
+            await self.init()
         return [self.blocks]
 
 class BlockchainBlocksModule(BMBase):

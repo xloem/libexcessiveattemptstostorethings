@@ -3,6 +3,10 @@ from typing import List, Any, Iterable
 
 class Module:
     Item = namedtuple('Item', 'name time id')
+    async def init(self):
+        pass
+    async def delete(self):
+        pass
     async def name(self):
         name = self.__class__.__name__
         if name.endswith('Module'):
