@@ -134,9 +134,11 @@ class Electrum:
         # bin = bytes.fromhex(hex)
         header_dict = await self._header_dict(height)
         # {'version': 1, 'prev_block_hash': '0000000000000000000000000000000000000000000000000000000000000000', 'merkle_root': '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b', 'timestamp': 1231006505, 'bits': 486604799, 'nonce': 2083236893, 'block_height': 0}
+        if header_dict is None:
+            raise KeyError(height)
         version = header_dict['version']
-        prev_hash = bytes.fromhex(header_dict['prev_block_hash'])
-        merkle_root = bytes.fromhex(header_dict['merkle_root'])
+        prev_hash = bytes.fromhex(header_dict['prev_block_hash'])[::-1]
+        merkle_root = bytes.fromhex(header_dict['merkle_root'])[::-1]
         timestamp = header_dict['timestamp']
         bits = header_dict['bits']
         nonce = header_dict['nonce']

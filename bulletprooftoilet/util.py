@@ -153,4 +153,38 @@ def replace_global_member_with_self_member(func, globalname, local=True):
         )
     return func
 
-
+async def chainparamscpp2checkpoints(filename, **blockchains):
+    import bitcoinx, json
+    with open(filename) as chainparamsfile:
+        content = chainparamsfile.read()
+    chunks = content.split('class')
+    result = {}
+    for chunk in chunks:
+        if 'strNetworkID' not in chunk:
+            continue
+        networkID = chunk.split('strNetworkID', 1)[1].split('=', 1)[1].split(';', 1)[0]
+        networkID = json.loads(networkID)
+        blockchain = blockchains.get(networkID)
+        data = chunk.split('checkpointData', 1)[1].split('{',2)[-1].split(')},\n')
+        chkpts = []
+        for item in data:
+            if ';' in data:
+                break
+            height, hash = item.split('{',1)[1].split('}',1)[0].split(',')
+            hash = hash.split('(',1)[1]
+            height = int(height)
+            hash = ''.join([chr for chr in hash if chr.isalnum()])
+            if blockchain is not None:
+                try:
+                    header = await blockchain.header(height)
+                except Exception as e:
+                    print(e)
+                    break
+                if hash != header.hash:
+                    print(height, hash, '!=', header.hash)
+                    break
+                chkpts.append((height, hash, bitcoinx.bits_to_target(header.bits)))
+            else:
+                chkpts.append((height, hash))
+        result[networkID] = chkpts
+    return result
