@@ -183,8 +183,10 @@ class ElectrumXClient:
     def __init__(self, coin_name = 'BitcoinSV', network = 'mainnet'):
         self.peermanager = PeerManager(coin_name, network)
         self._blocks = {}
-        self.name = f'{coin_name} {network}'
+        self.name = f'{coin_name}-{network}'
 
+    #async def peers(self):
+    #
     async def init(self):
         await aiorpcx.TaskGroup().spawn(self.peermanager.discover_peers())
 
