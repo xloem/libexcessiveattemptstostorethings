@@ -147,10 +147,10 @@ class Electrum:
         #self.electrum.verifier.verify_tx_is_in_block(tx_hash, merkle_branch, pos, header, height)
         return (leaf_pos_in_tree, tx_hash)
 
-    async def tx(self, txid):
+    async def tx(self, blockhash, blockheight, txhash, txpos):
         # i briefly glanced at bitcoin-core electrum library 2021 and it appeared that it verified the txid matched the data here
         try:
-            hex = await self.network.get_transaction(txid)
+            hex = await self.network.get_transaction(txhsah)
         except self.electrum.network.UntrustedServerReturnedError as e:
             if not isinstance(e.original_exception, aiorpcx.jsonrpc.RPCError):
                 raise
