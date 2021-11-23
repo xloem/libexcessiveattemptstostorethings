@@ -1,92 +1,276 @@
-import dis, types
+import dis, types, warnings
+
+# it's best not to do this for now, to use any other approach instead
+# but recursion problems can likely be generalised away if items are marked for transformation,
+# before doing the actual transformation.  then can use queues of checking-for-mark and transforming
+# the trick might be that marking can produce a result that is not dependent on any other results
+# fully completing.  it might be further simplifiable.
 
 class GlobalMutation:
     def __init__(self, **replacements):
-        self._globals_dict_maps = {}
         self._replacements = replacements
-        self._memo = set()
-    def replace(self, item):
-        if item in self._memo:
-            return item, False
-        self._memo.add(item)
-        if type(item) is types.FunctionType:
-            new_item, changed = self.replace_func(item)
-        elif type(item) is types.MethodType:
-            new_item, changed = self.replace_method(item)
-        elif type(item) is types.MethodWrapperType:
-            assert False
-        elif hasattr(item, '__class__'):
-            new_item, changed = self.replace_obj(item)
+
+        self._needs_replacing_memo_results = {}
+
+        self._globals_dict_maps = {}
+        self._replacing_memo = {}
+
+    # there are a couple errors here regarding order of recursion expansion
+    # and there are a number of solutions.  it is a pleasant puzzle.
+    # but maybe a different solution than mutating the library at runtime could be better,
+    #  in this day and age where algorithms could be mutating other things too
+
+    def needs_replacing(self, item, interdeps = None):
+        if interdeps is None:
+            is_root = True
+            interdeps = set()
         else:
-            new_item, changed = item, False
-        #self._replaced.add(new_item)
-        self._memo.remove(item)
-        return new_item, changed
-    def replace_obj(self, object):
-        changed = False
-        for name in dir(object):
-            attr = getattr(object, name)
+            is_root = False
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            try:
+                if item in interdeps:
+                    return RecursionError, interdeps
+                if item in self._needs_replacing_memo_results:
+                    return self._needs_replacing_memo_results[item], interdeps
+                interdeps.add(item)
+            except TypeError:
+                return False, set()
+            if type(item) is types.FunctionType:
+                flag, interdeps = self.needs_replacing_func(item, interdeps)
+            elif type(item) is types.MethodType:
+                flag, interdeps = self.needs_replacing_method(item, interdeps)
+            elif type(item) is types.ModuleType:
+                flag, interdeps = self.needs_replacing_mod(item, interdeps)
+            elif type(item) is types.MethodWrapperType:
+                assert False
+            elif hasattr(item, '__class__'):
+                flag, interdeps = self.needs_replacing_obj(item, interdeps)
+            else:
+                flag, interdeps = False, set()
+            if type(flag) is bool:
+                self._needs_replacing_memo_results[item] = flag
+                #interdeps.remove(item)
+                interdeps = set()
+            if is_root:
+                if type(flag) is not bool:
+                    flag = False
+                    for item in interdeps:
+                        assert self._needs_replacing_memo_results.get(item) in (None, False)
+                        self._needs_replacing_memo_results[item] = False
+                interdeps.clear()
+            #else:
+            #    del self._needs_replacing_memo[item]
+            return flag, interdeps
+    def replace(self, item):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            needs_replacing, item_interdeps = self.needs_replacing(item)
+            if needs_replacing != True:
+                if needs_replacing != False:
+                    raise needs_replacing
+                else:
+                    return item
+            try:
+                if item in self._replacing_memo:
+                    return self._replacing_memo[item]
+                #self._replacing_memo[item] = RecursionError
+            except TypeError:
+                return item
+            if type(item) is types.FunctionType:
+                new_item = self.replace_func(item)
+            elif type(item) is types.MethodType:
+                new_item = self.replace_method(item)
+            elif type(item) is types.ModuleType:
+                new_item = self.replace_mod(item)
+            elif type(item) is types.MethodWrapperType:
+                assert False
+            elif hasattr(item, '__class__'):
+                new_item = self.replace_obj(item)
+            else:
+                new_item = item
+            if new_item is RecursionError:
+                raise new_item
+            self._replacing_memo[item] = new_item
+            return new_item
+    # i am in middle of reimplementing 'replacing' function to make use of 'needs_replacing' functions.  left off right after above def replace()
+    def needs_replacing_obj(self, object, interdeps):
+        needs_replacing = False
+        for name, attr in ((name, getattr(object, name)) for name in dir(object) if hasattr(object, name)):
             if type(attr) is types.MethodType or type(attr) is types.FunctionType:
-                attr, attr_changed = self.replace(attr)
-                if attr_changed:
+                attr_needs_replacing, attr_interdeps = self.needs_replacing(attr, interdeps)
+                interdeps.update(attr_interdeps)
+                if attr_needs_replacing is True:
+                    needs_replacing = True
+                    break
+                elif attr_needs_replacing is RecursionError:
+                    needs_replacing = attr_needs_replacing
+        return needs_replacing, interdeps
+    def replace_obj(self, object):
+        self._replacing_memo[object] = object
+        changed = False
+        for name, attr in (
+            (name, getattr(object, name))
+            for name in dir(object)
+            if hasattr(object, name)
+        ):
+            #if name == '__init__' and 'aemon' in str(object):
+            #    import pdb; pdb.set_trace()
+            if type(attr) is types.MethodType or type(attr) is types.FunctionType:
+                attr_needs_replacing, attr_interdeps = self.needs_replacing(attr)
+                if attr_needs_replacing == True:
+                    attr = self.replace(attr)
                     setattr(object, name, attr)
-                    changed = True
-        return object, changed
+                elif attr_needs_replacing != False:
+                    raise attr_needs_replacing
+        return object
+    def needs_replacing_method(self, method, interdeps):
+        return self.needs_replacing(method.__func__, interdeps)
     def replace_method(self, method):
         func = method.__func__
         obj = method.__self__
-        func, func_changed = self.replace(func)
-        if func_changed:
+        func_needs_replacing, func_interdeps = self.needs_replacing(func)
+        if func_needs_replacing == True:
+            func = self.replace(func)
             method = types.MethodType(
                 func,
                 obj
             )
-        return method, func_changed
-    def replace_func(self, func):
-        changed = False
+        elif func_needs_replacing != False:
+            raise func_needs_replacing
+        return method
+    def needs_replacing_func(self, func, interdeps):
+        needs_replacing = False
         closure = func.__closure__
         if closure is not None:
-            new_cells = []
-            for idx, cell in enumerate(closure):
+            for cell in closure:
                 contents = cell.cell_contents
                 if type(contents) is types.FunctionType:
-                    contents, contents_changed = self.replace(contents)
-                    if contents_changed:
-                        changed = True
-                        cell = types.CellType(contents)
-                new_cells.append(cell)
-            if changed:
-                closure = tuple(new_cells)
+                    contents_need_replacing, contents_interdeps = self.needs_replacing(contents, interdeps)
+                    interdeps.update(contents_interdeps)
+                    if contents_need_replacing is not False:
+                        needs_replacing = contents_need_replacing
+                        if needs_replacing is True:
+                            break
+        if needs_replacing is not True:
+            for key, item in func.__globals__.items():
+                if key in self._replacements:
+                    needs_replacing = True
+                    break
+                elif type(item) is types.FunctionType:
+                    item_needs_replacing, item_interdeps = self.needs_replacing(item, interdeps)
+                    interdeps.update(item_interdeps)
+                    if item_needs_replacing is not False:
+                        needs_replacing = item_needs_replacing
+                        if needs_replacing is True:
+                            break
+        return needs_replacing, interdeps
+    def replace_func(self, func):
+
+        closure = func.__closure__
+        closure_needs_replacing = False
+        if closure is not None:
+            for cell in closure:
+                contents = cell.cell_contents
+                if type(contents) is types.FunctionType:
+                    contents_needs_replacing, contents_interdeps = self.needs_replacing(contents)
+                    if contents_needs_replacing == True:
+                        closure_needs_replacing = True
+                    elif contents_needs_replacing != False:
+                        raise contents_needs_replacing
+
+        globals_needs_replacing = False
         old_globals = func.__globals__
-        new_globals = self._globals_dict_maps.get(id(old_globals))
-        if new_globals is None:
-            new_globals = {}
+        new_globals = self._globals_dict_maps.setdefault(id(old_globals), {})
+        if len(new_globals) == 0:
             for key, item in old_globals.items():
                 if key in self._replacements:
-                    changed = True
-                    item = self._replacements[key]
+                    globals_needs_replacing = True
                 elif type(item) is types.FunctionType:
-                    item, item_changed = self.replace(item)
-                    changed = changed or item_changed
-                new_globals[key] = item
-            if not changed:
+                    item_needs_replacing, item_interdeps = self.needs_replacing(item)
+                    if item_needs_replacing == True:
+                        globals_needs_replacing = True
+                    elif item_needs_replacing != False:
+                        raise item_needs_replacing
+            if not globals_needs_replacing:
                 new_globals = old_globals
             self._globals_dict_maps[id(old_globals)] = new_globals
-        elif new_globals is not old_globals:
-            changed = True
-        if changed:
-            new_func = types.FunctionType(
-                func.__code__,
-                new_globals,
-                func.__name__,
-                func.__defaults__,
-                closure,
-            )
-            new_func.__kwdefaults__ = func.__kwdefaults__
-            return new_func, True
-        else:
-            return func, False
-            
+
+        # if this makes recursion issue, then simplest solution is to wrap function in one that can change the closure by e.g. generating func on first call.  reason is so that function can be instantiated to be reused, before closure replacement calls are made
+        if closure_needs_replacing:
+            new_cells = []
+            for cell in closure:
+                contents = cell.cell_contents
+                if type(contents) is types.FunctionType:
+                    contents_needs_replacing, contents_interdeps = self.needs_replacing(contents)
+                    if contents_needs_replacing == True:
+                        contents = self.replace(contents)
+                        cell = types.CellType(contents)
+                    elif contents_needs_replacing != False:
+                        raise contents_needs_replacing
+                new_cells.append(cell)
+            closure = tuple(new_cells)
+
+        new_func = types.FunctionType(
+            func.__code__,
+            new_globals,
+            func.__name__,
+            func.__defaults__,
+            closure)
+        new_func.__kwdefaults__ = func.__kwdefaults__
+        self._replacing_memo[func] = new_func
+
+        if globals_needs_replacing:
+            for key, item in old_globals.items():
+                if key in self._replacements:
+                    item = self._replacements[key]
+                elif type(item) is types.FunctionType:
+                    item_needs_replacing, item_interdeps = self.needs_replacing(item)
+                    if item_needs_replacing == True:
+                        item = self.replace(item)
+                    elif item_needs_replacing != False:
+                        raise item_needs_replacing
+                new_globals[key] = item
+            assert new_func.__globals__ is new_globals
+
+        return new_func
+    def needs_replacing_mod(self, mod, interdeps):
+        needs_replacing = False
+        for name in dir(mod):
+            if name in self._replacements:
+                needs_replacing = True
+                break
+            else:
+                item = getattr(mod, name)
+                if name[0] == '_':
+                    continue
+                elif type(item) is types.ModuleType and item.__package__ != mod.__package__:
+                    continue
+                else:
+                    item_needs_replacing, item_interdeps = self.needs_replacing(item, interdeps)
+                    interdeps.update(item_interdeps)
+                    if item_needs_replacing is not False:
+                        needs_replacing = item_needs_replacing
+                        if needs_replacing is True:
+                            break
+        return needs_replacing, interdeps
+    def replace_mod(self, mod):
+        class replaced:
+            pass
+        self._replacing_memo[mod] = replaced
+
+        for name in dir(mod):
+            item = self._replacements.get(name)
+            if item is None:
+                item = getattr(mod, name)
+                if name[0] == '_':
+                    pass
+                elif type(item) is types.ModuleType and item.__package__ != mod.__package__:
+                    pass
+                else:
+                    item = self.replace(item)
+            setattr(replaced, name, item)
+        return replaced
 
 def replace_all_global_members_with_self_members(object, globalname):
     for name in dir(object):
@@ -108,7 +292,7 @@ def replace_global_member_with_self_member(func, globalname, local=True):
     closure = func.__closure__
     if closure is not None:
         new_cells = []
-        for idx, cell in enumerate(closure):
+        for cell in closure:
             contents = cell.cell_contents
             if type(contents) is types.FunctionType:
                 replaced = replace_global_member_with_self_member(contents, globalname)

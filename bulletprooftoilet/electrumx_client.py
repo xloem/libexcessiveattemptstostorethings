@@ -179,10 +179,12 @@ class PeerManager(electrumx.server.peers.PeerManager):
             self.our_height = their_height
             self.our_hash = their_hash
 
-class ElectrumXClient:
+class ElectrumX:
     def __init__(self, coin_name = 'BitcoinSV', network = 'mainnet'):
         self.peermanager = PeerManager(coin_name, network)
+        self.max_header_chunk = 2016
         self._blocks = {}
+        self._headers = {}
         self.name = f'{coin_name}-{network}'
 
     #async def peers(self):
@@ -190,10 +192,38 @@ class ElectrumXClient:
     async def init(self):
         await aiorpcx.TaskGroup().spawn(self.peermanager.discover_peers())
 
+    async def delete(self):
+        pass
+
     async def height(self):
         while self.peermanager.our_height == 0:
             await asyncio.sleep(0.2)
         return self.peermanager.our_height
+
+    async def header(self, height):
+        result = self._headers.get(height)
+        if result is None:
+            chunksize = self.max_header_chunk
+            start = height - (height % chunksize)
+            # this can also provide merkle proofs if a checkpoint is included
+            result = self.peermaneger.request(str, 'blockchain.block.headers', start, chunksize)
+            self.max_header_chunk = result['max']
+            hex = result['hex']
+            count = result['count']
+            headers = bytes.fromhex(result['hex'])
+            del result
+            for headeridx in range(count):
+                header_height = start + headeridx
+                raw = headers[headeridx * 80:(headeridx+1)*80]
+                version, prev_hash, merkle_root, timestamp, bits, nonce = struct.pack('<L32s32sLLL', raw)
+                prev_hash = prev_hash[::-1].hex()
+                merkle_root = prev_hash[::-1].hex()
+                hash = bitcoinx.double_sha256(raw)[::-1].hex()
+                header = bitcoinx.Header(version, prev_hash, merkle_root, timestamp, bits, nonce, hash, raw, header_height)
+                self._headers[header_height] = header
+                if header_height == height:
+                    result = header
+        return result
 
     async def txids(self, height):
         async for txid in self.block(height).txids():

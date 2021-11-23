@@ -12,21 +12,10 @@ from . import util
 
 class Electrum:
     def __init__(self, electrum, net = None, userdirsuffix = '', **options):
-        # can likely access other networks by changing SimpleConfig.
-        # SimpleConfig.get('server') shows initial default server
-        # --> it turns out network checks are hardcoded into electrum by referencing electrum.constants.  it's designed for 1-process-per-network.
         self.electrum = electrum
         if net is None:
             net = self.electrum.constants.net
         self._net = net
-        #self.default_servers = default_servers if default_servers is not None else self.electrum.net.DEFAULT_SERVERS
-        #if options.get('server') is None:
-        #    default_server = random.choice([*self.default_servers.items()])
-        #    if 's' in default_server[1]:
-        #        default_server = f'{default_server[0]}:{default_server[1]["s"]}:s'
-        #    else:
-        #        default_server = f'{default_server[0]}:{default_server[1]["t"]}:t'
-        #    options['server'] = default_server
         self.config = self.electrum.simple_config.SimpleConfig(
             options,
             read_user_dir_function = lambda: self.electrum.util.user_dir() + userdirsuffix
@@ -34,34 +23,55 @@ class Electrum:
         
     async def init(self): 
 
-        constants = lambda: None
+        # main electrum client hardcodes bitcoin-only servers, makes reuse harder
+        # this can replace the server member function of Network, to use configured servers
+        class constants:
+            net = self._net
 
         pick_random_server = None
         constants.net = self._net
 
         def Interface(*params, **kwparams):
             interface = self.electrum.interface.Interface(*params, **kwparams)
-            #interface.net = self._net
-            interface, replaced = mutation.replace(interface)
-            assert replaced
-            #util.replace_all_global_members_with_self_members(interface, 'constants')
+            new_interface = mutation.replace(interface)
+            assert new_interface is not interface or type(interface) is Interface
             return interface
 
         def Network(config, *params, **kwparams):
-            Network, replaced = mutation.replace(self.electrum.network.Network)
             if config.get('server') is None:
                 config.set_key('server', pick_random_server(allowed_protocols = 's').to_json())
-            network = Network(config, *params, **kwparams)
+            new_Network = mutation.replace(self.electrum.network.Network)
+            assert new_Network is not self.electrum.network.Network
+            network = new_Network(config, *params, **kwparams)
             #network = self.electrum.network.Network(config, *params, **kwparams)
-            #network, replaced = mutation.replace(network)
-            assert replaced
+            #network = mutation.replace(network)
             return network
 
+        mutation = None
         mutation = util.GlobalMutation(constants = constants, Interface = Interface, Network = Network)
-        pick_random_server, replaced = mutation.replace(self.electrum.network.pick_random_server)
-        mutation = util.GlobalMutation(constants = constants, Interface = Interface, Network = Network, pick_random_server = pick_random_server)
+        pick_random_server = mutation.replace(self.electrum.network.pick_random_server)
+        assert pick_random_server is not self.electrum.network.pick_random_server
+        #mutation = util.GlobalMutation(constants = constants)
+        #class network_mod:
+        #    for name in dir(self.electrum.network):
+        #        locals()[name], _ = mutation.replace(getattr(self.electrum.network, name))
+        #mutation = util.GlobalMutation(constants = constants, network = network_mod)
+        #class interface_mod:
+        #    for name in dir(self.electrum.interface):
+        #        locals()[name], _ = mutation.replace(getattr(self.electrum.interface, name))
+        #mutation = util.GlobalMutation(constants = constants, network = network_mod, interface = interface_mod)
+        class blockchain_mod:
+            for name in dir(self.electrum.blockchain):
+                locals()[name] = mutation.replace(getattr(self.electrum.blockchain, name))
+        #mutation = util.GlobalMutation(constants = constants, network = network_mod, interface = interface_mod, blockchain = blockchain_mod)
+        #blockchain_mod = mutation.replace(self.electrum.blockchain)
+        #assert blockchain_mode is not self.electrum.blockchain
+        #mutation = util.GlobalMutation(constants = constants, blockchain = blockchain_mod, interface = interface_mod, network = network_mod)
+        mutation = util.GlobalMutation(constants = constants, Interface = Interface, Network = Network, pick_random_server = pick_random_server, blockchain = blockchain_mod)
 
-        Daemon, daemon_replaced = mutation.replace(self.electrum.daemon.Daemon)
+        class Daemon(self.electrum.daemon.Daemon):
+            pass
+        Daemon = mutation.replace(Daemon)
 
         # network.start or Daemon.__init__ shouldn't be called inside an async loop
         # because it will pause the async loop, waiting for another async event to finish
@@ -74,42 +84,7 @@ class Electrum:
             self.daemon = Daemon(self.config)
             self.network = self.daemon.network
 
-        ## main electrum client hardcodes bitcoin-only servers, makes reuse harder
-        ## this can replace the server member function of Network, to use configured servers
-        #def get_network_servers():
-        #    with self.network.recent_servers_lock:
-        #        out = dict()
-        #        # add servers received from main interface
-        #        server_peers = self.network.server_peers
-        #        if server_peers:
-        #            out.update(self.electrum.network.filter_version(server_peers.copy()))
-    
-        #        out.update(self.default_servers)
-        #        # add recent servers
-        #        for server in self.network._recent_servers:
-        #            port = str(server.port)
-        #            if server.host in out:
-        #                out[server.host].update({server.protocol: port})
-        #            else:
-        #                out[server.host] = {server.protocol: port}
-        #        # potentially filter out some
-        #        if self.config.get('noonion'):
-        #            out = filter_noonion(out)
-        #        return out
-
         await asyncio.get_event_loop().run_in_executor(None, make_network)
-
-        #self.network.get_servers = get_network_servers
-
-        
-        #self.network.net = self._net
-        #mutation.replace(self.network)
-        #mutation.replace(self.network.interface)
-        #util.replace_all_global_members_with_self_members(self.network, 'constants')
-        #self.network.Interface = Interface
-        #util.replace_all_global_members_with_self_members(self.network, 'Interface')
-        #util.replace_all_global_members_with_self_members(self.network.interface, 'constants')
-
 
         self.logger = self.daemon.logger
         
@@ -158,7 +133,7 @@ class Electrum:
                 break
             pos += 1
 
-    async def txid_for_pos(self, height, pos):
+    async def pos_txid(self, height, pos):
         result = await self.network.get_txid_from_txpos(height, pos, True)
         header = await self._header_dict(height)
         tx_hash = result['tx_hash']
@@ -182,8 +157,20 @@ class Electrum:
             raise KeyError(txid)
         return bitcoinx.Tx.from_hex(hex)
 
-    #async def blockheaders(self, start_height, ct):
-    #    return await
+    async def addr_txids(self, addr):
+        # scripthash format is electrum-specific and documented in the electrum project
+        raise AssertionError('this might call interface.get_history_for_scripthash')
+
+    async def addr_utxos(self, addr):
+        # scripthash format is electrum-specific and documented in the electrum project
+        raise AssertionError('this might call interface.listunspect_for_scripthash')
+
+    async def addr_balance(self, addr):
+        # scripthash format is electrum-specific and documented in the electrum project
+        raise AssertionError('this might call interface.get_balance_for_scripthash')
+
+    async def estimate_fee(self, blocks, probability):
+        raise AssertionError('this might call interface.get_fee_histogram / interface.get_relay_fee / interface.get_estimatefee')
 
 import electrum
 class ElectrumSV(Electrum, electrum.constants.BitcoinMainnet):
