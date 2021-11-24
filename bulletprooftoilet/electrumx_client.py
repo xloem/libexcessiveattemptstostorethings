@@ -213,7 +213,7 @@ class ElectrumX:
         if result is None:
             chunksize = self.max_header_chunk
             start = height - (height % chunksize)
-            self.logger.warning(f'Fetching block headers {start} - {start + chunksize} ...  this could be sped up by using electrum block merkle proofs')
+            self.logger.warning(f'Fetching block headers {start} - {start + chunksize} ...  this be improved to use e.g. electrum.server.block_processor.BlockProcessor or its daemon, and its databsae')
             # this can also provide merkle proofs if a checkpoint is included
             result = await self.peermanager.request(dict, 'blockchain.block.headers', start, chunksize)
             self.max_header_chunk = result['max']
