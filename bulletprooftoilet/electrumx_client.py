@@ -291,8 +291,10 @@ class ElectrumX:
         #await self.peermanager.request(list, 'blockchain.scripthash.subscribe', hashx)
         return txid
 
-    async def estimate_fee_per_kb(self, blocks, probability):
-        return await self.peermanager.request(float, 'blockchain.estimatefee', blocks)#, 'CONSERVATIVE' if probability > .5 else 'ECONOMICAL')
+    async def estimate_fee(self, bytect, blocks, probability):
+        fee_per_kb = await self.peermanager.request(float, 'blockchain.estimatefee', blocks)#, 'CONSERVATIVE' if probability > .5 else 'ECONOMICAL')
+        min_fee = await self.peermanager.request(float, 'blockchain.relayfee')
+        return int(max(min_fee, fee_per_kb * bytect / 1024) * 100000000)
 
     def addr_to_scripthash(self, addr):
         # scripthash format is electrum-specific and documented in the electrum project
