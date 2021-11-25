@@ -19,3 +19,5 @@ class Module:
         return []
     async def data(self, id) -> Iterable[bytes]:
         raise KeyError(id)
+    async def create(self, name, bytes) -> 'id':
+        raise KeyError(name)

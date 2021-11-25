@@ -172,6 +172,9 @@ class Electrum:
     async def estimate_fee(self, blocks, probability):
         raise AssertionError('this might call interface.get_fee_histogram / interface.get_relay_fee / interface.get_estimatefee')
 
+    async def broadcast(self, txbytes) -> str:
+        raise AssertionError()
+
 import electrum
 class ElectrumSV(Electrum, electrum.constants.BitcoinMainnet):
     DEFAULT_SERVERS = {

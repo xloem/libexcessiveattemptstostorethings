@@ -282,3 +282,35 @@ class ElectrumX:
 
     async def tx(self, blockhash, blockheight, txhash, txpos, verbose = False):
         return await self.peermanager.tx(txhash, verbose)
+
+    async def estimate_fee(self, blocks, probability):
+        raise AssertionError('there is an rpc call for this')
+
+    async def broadcast(self, txbytes) -> str:
+        txid = await self.peermanager.request(str, 'blockchain.transaction.broadcast', txbytes.hex())
+        #await self.peermanager.request(list, 'blockchain.scripthash.subscribe', hashx)
+        return txid
+
+    async def estimate_fee_per_kb(self, blocks, probability):
+        return await self.peermanager.request(float, 'blockchain.estimatefee', blocks)#, 'CONSERVATIVE' if probability > .5 else 'ECONOMICAL')
+
+    def addr_to_scripthash(self, addr):
+        # scripthash format is electrum-specific and documented in the electrum project
+        script = self.peermanager.env.coin.pay_to_address_script(addr)
+        hash = electrumx.lib.hash.sha256(script)
+        return hash[::-1].hex()
+
+    async def addr_utxos(self, addr):
+        # presently returns a list of dicts:
+        # [{ 'tx_hash': hex, 'tx_pos': int, 'height': int, 'value': int }, ...]
+        scripthash = self.addr_to_scripthash(addr)
+        return await self.peermanager.request(list, 'blockchain.scripthash.listunspent', scripthash)
+
+    async def addr_txids(self, addr):
+        scripthash = self.addr_to_scripthash(addr)
+        return await self.peermanager.request(list, 'blockchain.scripthash.get_history', scripthash)
+        return await self.peermanager.request(list, 'blockchain.scripthash.get_mempool', scripthash)
+
+    async def addr_balance(self, addr):
+        scripthash = self.addr_to_scripthash(addr)
+        return await self.peermanager.request(list, 'blockchain.scripthash.get_balance', scripthash)
