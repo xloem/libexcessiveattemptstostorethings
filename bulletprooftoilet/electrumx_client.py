@@ -65,6 +65,17 @@ class ClientEnv(electrumx.Env):
 #            for txid in self._txids:
 #                yield txid
 
+def PeerSession(handlers):
+    class PeerSession(electrumx.server.peers.PeerSession):
+        async def handle_request(self, request):
+            handler = handlers.get(request.method)
+            if handler is not None:
+                #import pdb; pdb.set_trace()
+                return await aiorpcx.handler_invocation(handler, request)()
+            else:
+                return await super().handle_request(request)
+    return PeerSession
+
 class PeerManager(electrumx.server.peers.PeerManager):
     def __init__(self, coin_name, network = 'mainnet'):
         env = ClientEnv(coin_name, network)
@@ -137,9 +148,20 @@ class PeerManager(electrumx.server.peers.PeerManager):
             kwargs['proxy'] = self.proxy
             kwargs['resolve'] = not peer.is_tor
 
-        client = aiorpcx.connect_rs(peer.host, port, session_factory=electrumx.server.peers.PeerSession, **kwargs)
+        handlers = {
+            'blockchain.scripthash.subscribe':self.on_scripthash,
+            'blockchain.headers.subscribe':self.on_header,
+        }
+        client = aiorpcx.connect_rs(peer.host, port, session_factory=PeerSession(handlers), **kwargs)
 
         self.clients.append((peer, client))
+
+    async def on_scripthash(self, scripthash, statehash):
+        #import pdb; pdb.set_trace()
+        print('scripthash', scripthash, statehash)
+
+    async def on_header(self, header):
+        print('header', header)
 
     async def _send_headers_subscribe(self, session):    
         from electrumx.server.peers import BadPeerError, assert_good
