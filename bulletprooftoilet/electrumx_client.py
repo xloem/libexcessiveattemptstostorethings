@@ -84,6 +84,8 @@ class PeerManager(electrumx.server.peers.PeerManager):
         self.clients = []
         self._active_peer = None
         self._active_session = None
+        self._scripthash_queues = {}
+        self._header_queues = set()
         # db = electrumx.server.db.DB(env)
         super().__init__(env, None)
 
@@ -157,11 +159,15 @@ class PeerManager(electrumx.server.peers.PeerManager):
         self.clients.append((peer, client))
 
     async def on_scripthash(self, scripthash, statehash):
-        #import pdb; pdb.set_trace()
-        print('scripthash', scripthash, statehash)
+        try:
+            for queue in self._scripthash_queues[scripthash]:
+                await queue.put(statehash)
+        except:
+            print('WARNING: subscribed but no queue', scripthash, statehash)
 
     async def on_header(self, header):
-        print('header', header)
+        for queue in self._header_queues[scripthash]:
+            await queue.put(header)
 
     async def _send_headers_subscribe(self, session):    
         from electrumx.server.peers import BadPeerError, assert_good
@@ -246,18 +252,25 @@ class ElectrumX:
             for headeridx in range(count):
                 header_height = start + headeridx
                 raw = headers[headeridx * 80:(headeridx+1)*80]
-                version, prev_hash, merkle_root, timestamp, bits, nonce = struct.unpack('<L32s32sLLL', raw)
-                prev_hash = prev_hash[::-1].hex()
-                merkle_root = merkle_root[::-1].hex()
-                hash = bitcoinx.double_sha256(raw)[::-1].hex()
-                header = bitcoinx.Header(version, prev_hash, merkle_root, timestamp, bits, nonce, hash, raw, header_height)
-                if header_height > 0:
-                    if (await self.header(header_height - 1)).hash != header.prev_hash:
-                        raise AssertionError('TODO: chain link incorrect.  if this check is commented out the system will function but some data will be corrupt or malicious')
-                self._headers[header_height] = header
+                header = await self.bytes2header(raw, header_height)
                 if header_height == height:
                     result = header
         return result
+
+    async def bytes2header(self, raw, header_height):
+        version, prev_hash, merkle_root, timestamp, bits, nonce = struct.unpack('<L32s32sLLL', raw)
+        prev_hash = prev_hash[::-1].hex()
+        merkle_root = merkle_root[::-1].hex()
+        hash = bitcoinx.double_sha256(raw)[::-1].hex()
+        header = bitcoinx.Header(version, prev_hash, merkle_root, timestamp, bits, nonce, hash, raw, header_height)
+        print('TODO: form chain from headers')
+        #if header_height > 0:
+        #    if (await self.header(header_height - 1)).hash != header.prev_hash:
+        #        raise AssertionError('TODO: chain link incorrect.  if this check is commented out the system will function but some data will be corrupt or malicious')
+        if header_height in self._headers:
+            raise AssertionError('chain reorg unhandled')
+        self._headers[header_height] = header
+        return header
 
     async def txids(self, height):
         txids = self._txids_by_height.get(height)
@@ -338,3 +351,59 @@ class ElectrumX:
     async def addr_balance(self, addr):
         scripthash = self.addr_to_scripthash(addr)
         return await self.peermanager.request(list, 'blockchain.scripthash.get_balance', scripthash)
+
+    async def addr_get_mempool(self, addr):
+        scripthash = self.addr_to_scripthash(addr)
+        # presently a list of dicts containing 'tx_hash' and 'height'
+        return await self.peermanager.request(list, 'blockchain.scripthash.get_mempool', scripthash)
+
+    async def addr_get_history(self, addr):
+        # all txs including mempool
+        scripthash = self.addr_to_scripthash(addr)
+        # presently a list of dicts containing 'tx_hash', 'height', and 'fee'
+        return await self.peermanager.request(list, 'blockchain.scripthash.get_history', scripthash)
+
+    async def watch_address(self, addr):
+        scripthash = self.addr_to_scripthash(addr)
+        queue = asyncio.Queue()
+        try:
+            if scripthash not in self.peermanager._scripthash_queues:
+                self.peermanager._scripthash_queues[scripthash] = set([queue])
+                statehash = await self.peermanager.request(str, 'blockchain.scripthash.subscribe', scripthash)
+            else:
+                self.peermanager._scripthash_queues[scripthash].add(queue)
+                statehash = None
+            while True:
+                if statehash is not None:
+                    yield statehash
+                statehash = await queue.get()
+        finally:
+            self.peermanager._scripthash_queues[scripthash].remove(queue)
+            if len(self.peermanager._scripthash_queues[scripthash]) == 0:
+                try:
+                    await self.peermanager.request(str, 'blockchain.scripthash.unsubscribe', scripthash)
+                except:
+                    pass
+
+    async def watch_headers(self):
+        queue = asyncio.Queue()
+        try:
+            if len(self.peermanager._header_queues) == 0:
+                self.peermanager._header_queues.add(queue)
+                header = await self.peermanager.request(dict, 'blockchain.headers.subscribe')
+            else:
+                self.peermanager._header_queues.add(queue)
+                header = None
+            while True:
+                header = await self.bytes2header(bytes.fromhex(header['hex']), header['height'])
+                if header is not None:
+                    yield header
+                header = await queue.get()
+        finally:
+            self.peermanager._header_queues.remove(queue)
+            if len(self.peermanager._header_queues) == 0:
+                try:
+                    await self.peermanager.request(str, 'blockchain.headers.unsubscribe')
+                except:
+                    pass
+

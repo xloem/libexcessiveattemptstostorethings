@@ -66,6 +66,13 @@ async def main():
         jpgout.write(BJPG.data)
         print(f'wrote {BJPG.media_type} to {BJPG_TXID}.jpg')
 
+    blockchain = blockchainmodule.blockchain
+    scripthash = blockchain.addr_to_scripthash(privkey.public_key.to_address().to_string())
+    result = await blockchain.peermanager.request(str, 'blockchain.scripthash.subscribe', scripthash)
+    print('subscribe to ' + scripthash + ':', result)
+    result = await blockchain.peermanager.request(dict, 'blockchain.headers.subscribe')
+    print('subscribe to headers:', result)
+
     #utxos = await blockchainmodule.blockchain.addr_utxos(privkey.public_key.to_address().to_string())
     #print('utxos', utxos)
     #fee_per_kb = await blockchainmodule.blockchain.estimate_fee_per_kb(6, 0.25)
@@ -75,6 +82,51 @@ async def main():
     txid = await blockchainmodule.blockchain.broadcast(tx.to_bytes())
     print('sent', txid)
 
+    await asyncio.sleep(60*30)
+
+    addr = privkey.public_key.to_address().to_string()
+    async for update in blockchainmodule.blockchain.watch_address(addr):
+        found = False
+        for entry in await blockchainmodule.blockchain.addr_get_mempool(addr):
+            if entry['tx_hash'] == txid:
+                found = True
+                break
+        if not found:
+            print(f'waiting to see {txid} in mempool')
+        else:
+            break
+    print(f'{txid} in mempool')
+    #async for update in blockchainmodule.blockchain.watch_address(addr):
+    #    found = False
+    #    for entry in await blockchainmodule.blockchain.addr_get_mempool(addr):
+    #        if entry['tx_hash'] == txid:
+    #            found = True
+    #            break
+    #    if found:
+    #        print(f'{txid} is still in the mempool, waiting for confirmation')
+    #    else:
+    #        break
+    #found = False
+    #for entry in await blockchainmodule.blockchain.addr_get_history(addr):
+    #    if entry['tx_hash'] == txid:
+    #        found = True
+    #        height = entry['height']
+    #        print(f'{txid} mined at height {height}')
+    #if found == False:
+    #    raise AssertionError('tx dropped')
+    async for header in blockchainmodule.blockchain.watch_headers():
+        found = False
+        for entry in await blockchainmodule.blockchain.addr_get_history(addr):
+            if entry['tx_hash'] == txid:
+                found = True
+                height = entry['height']
+                if height > 0:
+                    print(f'{txid} mined at height {height}')
+                else:
+                    print(f'{txid} is in the mempool, waiting for confirmation')
+        if not found:
+            raise AssertionError('tx dropped or forked away')
+        print(f'tx at height {height}, header {header.height}')
     #print('staying live for 30 minutes to see if some library outputs something')
     #await asyncio.sleep(30*60)
 
