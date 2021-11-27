@@ -166,7 +166,8 @@ class PeerManager(electrumx.server.peers.PeerManager):
             print('WARNING: subscribed but no queue', scripthash, statehash)
 
     async def on_header(self, header):
-        for queue in self._header_queues[scripthash]:
+        print('dbgheader', header)
+        for queue in self._header_queues:
             await queue.put(header)
 
     async def _send_headers_subscribe(self, session):    
