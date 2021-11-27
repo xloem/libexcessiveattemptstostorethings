@@ -106,7 +106,11 @@ class PeerManager(electrumx.server.peers.PeerManager):
     async def request(self, type, message, *params):
         peer, session = await self.peersession()
         from electrumx.server.peers import assert_good
-        result = await session.send_request(message, params)
+        try:
+            result = await session.send_request(message, params)
+        except aiorpcx.curio.TaskTimeout as e:
+            print(et)
+            return self.request(type, message, *params)
         assert_good(message, result, type)
         return result
 

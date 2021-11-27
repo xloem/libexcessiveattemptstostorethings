@@ -82,7 +82,7 @@ async def main():
     txid = await blockchainmodule.blockchain.broadcast(tx.to_bytes())
     print('sent', txid)
 
-    await asyncio.sleep(60*30)
+    #await asyncio.sleep(60*30)
 
     addr = privkey.public_key.to_address().to_string()
     async for update in blockchainmodule.blockchain.watch_address(addr):
