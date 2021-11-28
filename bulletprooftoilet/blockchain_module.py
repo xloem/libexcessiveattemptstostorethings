@@ -35,6 +35,7 @@ class BlockchainBlocksModule(BMBase):
         if self.blocks is None:
             self.blocks = []
         height = await self.blockchain.height()
+        assert height > 0
         while height >= len(self.blocks):
             block = BlockchainBlockModule(self.blockchain, len(self.blocks))
             self.blocks.append(block)
@@ -100,7 +101,8 @@ class BlockchainBlockModule(BMBase):
         return await self.block.hash()
     async def items(self):
         pos = 0
-        timestamp = (await self.block.header()).timestamp
+        header = await self.block.header()
+        timestamp = header.timestamp
         time = datetime.datetime.fromtimestamp(timestamp)
         async for txid in self.block.txids():
             yield Module.Item(txid, time, (txid, pos))

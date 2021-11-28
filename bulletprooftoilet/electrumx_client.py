@@ -323,9 +323,6 @@ class ElectrumX:
     async def tx(self, blockhash, blockheight, txhash, txpos, verbose = False):
         return await self.peermanager.tx(txhash, verbose)
 
-    async def estimate_fee(self, blocks, probability):
-        raise AssertionError('there is an rpc call for this')
-
     async def broadcast(self, txbytes) -> str:
         txid = await self.peermanager.request(str, 'blockchain.transaction.broadcast', txbytes.hex())
         #await self.peermanager.request(list, 'blockchain.scripthash.subscribe', hashx)
