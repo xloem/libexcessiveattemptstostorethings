@@ -10,6 +10,11 @@ import bitcoinx
 
 from . import util
 
+# electrum uses ANDROID_DATA to enable the use of android java, which is not available in android terminal emulators
+import os
+if 'ANDROID_DATA' in os.environ and not 'ANDROID_ARGUMENT' in os.environ:
+    del os.environ['ANDROID_DATA']
+
 class Electrum:
     def __init__(self, electrum, net = None, userdirsuffix = '', **options):
         self.electrum = electrum
