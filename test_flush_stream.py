@@ -20,6 +20,7 @@ async def main():
 
 
     print('WARN: bugs not fixed yet')
+    print('=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=')
     bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False)
 
     await blockchain.delete()
