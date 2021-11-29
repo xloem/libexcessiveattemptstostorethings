@@ -1,3 +1,51 @@
+import struct
+
+class Header:
+    size = 80
+    def __init__(self, raw, height):
+        self.raw = raw
+        self.height = height
+    @staticmethod
+    def fromfields(version, prev_hash_hex, merkle_root_hex, timestamp, bits, nonce, height):
+        raw = struct.pack('<L32s32sLLL', version, bytes.fromhex(prev_hash_hex)[::-1], bytes.fromhex(merkle_root_hex)[::-1], timestamp, bits, nonce)
+        return Header(raw, height)
+    @staticmethod
+    def fromhex(hex, height):
+        return Header(bytes.fromhex(hex), height)
+    @property
+    def version(self):
+        return struct.unpack('<L', self.raw[:4])[0]
+    @property
+    def prev_hash_raw(self):
+        return struct.unpack('32s', self.raw[4:36])[0]
+    @property
+    def merkle_root_raw(self):
+        return struct.unpack('32s', self.raw[36:68])[0]
+    @property
+    def timestamp(self):
+        return struct.unpack('<L', self.raw[68:72])[0]
+    @property
+    def bits(self):
+        return struct.unpack('<L', self.raw[72:76])[0]
+    @property
+    def nonce(self):
+        return struct.unpack('<L', self.raw[76:80])[0]
+    @property
+    def hex(self):
+        return self.raw.hex()
+    @property
+    def hash_raw(self):
+        return bit.crypto.double_sha256(self.raw)
+    @property
+    def hash_hex(self):
+        return self.hash_raw[::-1].hex()
+    @property
+    def prev_hash_hex(self):
+        return self.prev_hash[::-1].hex()
+    @property
+    def merkle_root_hex(self):
+        return self.merkle_root[::-1].hex()
+
 def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None, forkid = False):
     if type(privkey) is not bitcoinx.PrivateKey:
         privkey = bitcoinx.PrivateKey(privkey)
