@@ -56,6 +56,7 @@ class ElectrumClient:
         self.protocol = protocol
         self.session = session
 
+        self.last_message_received_at = time.time()
         self.keepalive_task = asyncio.create_task(self._keepalive())
         
         banner = await self.request(str, 'server.banner')
