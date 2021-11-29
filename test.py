@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import asyncio, random
 
 from bulletprooftoilet import electrum_client_2, electrum_client, electrumx_client, blockchain_module, bitcoin, bitcom, util

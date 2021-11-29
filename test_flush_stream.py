@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import asyncio, random, sys
 
 from bulletprooftoilet import electrum_client_2, bitcoin, bitcom
@@ -20,7 +22,7 @@ async def main():
 
 
     print('WARN: bugs not fixed yet')
-    print('=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=')
+    print('\n=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=\n')
     bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False)
 
     await blockchain.delete()
