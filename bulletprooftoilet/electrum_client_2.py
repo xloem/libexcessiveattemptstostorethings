@@ -242,7 +242,7 @@ class ElectrumClient:
             now = time.time()
             seconds_since_last_message = now - self.last_message_received_at
             if seconds_since_last_message >= self.keepalive_seconds:
-                await self.request('server.ping')
+                await self.request(type(None), 'server.ping')
             else:
                 await asyncio.sleep(self.keepalive_seconds - seconds_since_last_message)
 
