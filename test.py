@@ -116,6 +116,7 @@ async def main():
 
     #await asyncio.sleep(60*30)
 
+    in_chain = False
     while True:
         updates_by_queue = await addr_and_header_updates.get()
         if header_updates in updates_by_queue:
@@ -128,8 +129,8 @@ async def main():
                 in_mempool = True
                 print('Tx is in the mempool')
                 break
-        in_chain = False
         if not in_mempool and header_updates in updates_by_queue:
+            in_chain = False
             for entry in await blockchainmodule.blockchain.addr_history(addr):
                 if entry['tx_hash'] == txid:
                     in_chain = True
