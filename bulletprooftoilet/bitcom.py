@@ -9,6 +9,12 @@ convert_bytes_to = {
     bytes: bytes,
 }
 
+convert_to_bytes = {
+    str: lambda str: str.encode(),
+    int: lambda int: str(int).encode(),
+    bytes: bytes
+}
+
 class bitcom:
     bitcom = None
     Op = namedtuple('Op', 'output_idx op_idx op item')
@@ -44,6 +50,22 @@ class bitcom:
         result.bitcom = bitcom_value
         result.tx = tx
         return result
+    def to_pushdata_list(self):
+        cls_fields = list(fields(self))
+        result = []
+        result.append(convert_to_bytes[str](self.bitcom))
+        for idx, field in enumerate(cls_fields):
+            value = getttr(self, field.name)
+            if typing.get_origin(field.type) is list and idx + 1 == len(cls_fields):
+                item_type, = typing.get_args(field.type)
+                result.extend([convert_to_bytes[item_type](item) for item in value])
+            else:
+                result.append(convert_to_bytes[field.type](value))
+        return result
+    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
+        from . import bitcoin
+        pushdata = self.to_pushdata_list()
+        return bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, *pushdata, change_addr, forkid)
 
 @dataclass
 class B(bitcom):
@@ -62,6 +84,9 @@ class BCAT(bitcom):
     name : str
     flag : str
     parts : typing.List[bytes]
+
+#class AutoBCAT(BCAT):
+#    def __init__(self, 
 
 @dataclass
 class BCATPART(bitcom):
