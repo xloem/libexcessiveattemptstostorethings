@@ -1,5 +1,17 @@
 import struct
 
+# intending to pick only one bitcoin structure library, atm there are two
+import bit, bitcoinx
+
+def params2utxo(amount, txid, txindex, scriptpubkey = None, confirmations = None):
+    return bit.network.meta.Unspent(amount, confirmations, scriptpubkey, txid, txindex)
+
+def hex2privkey(hex):
+    return bitcoinx.PrivateKey.from_hex(hex)
+
+def privkey2addr(privkey):
+    return privkey.public_key.to_address().to_string()
+
 class Header:
     size = 80
     def __init__(self, raw, height):
@@ -70,7 +82,13 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
         script = script << item
     data_output = bitcoinx.TxOutput(0, script)
     fee_output = bitcoinx.TxOutput(value, change_addr.to_script())
-    tx = bitcoinx.Tx(1, inputs, [data_output, fee_output], 0)
+    data_output_idx = 0
+    fee_output_idx = 1
+    outputs = [None, None]
+    outputs[data_output_idx] = data_output
+    outputs[fee_output_idx] = fee_output
+    tx = bitcoinx.Tx(1, inputs, outputs, 0)
+    
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
     fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1024) + 0.5)
     print('FEE:', fee)
@@ -87,4 +105,4 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
         input.script_sig = bitcoinx.Script() << privkey.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.to_bytes()
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
 
-    return tx
+    return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0)

@@ -1,4 +1,21 @@
-import dis, types, warnings
+import asyncio, dis, types, warnings
+
+class Queues:
+    def __init__(self, *queues):
+        self.queues = queues
+        self.tasks = {}
+    async def get(self):
+        for queue in self.queues:
+            if queue not in self.tasks:
+                task = asyncio.create_task(queue.get())
+                self.tasks[queue] = task
+        queue_by_task = {task:queue for queue, task in self.tasks.items()}
+        done, pending = await asyncio.wait(self.tasks.values(), return_when = asyncio.FIRST_COMPLETED)
+        results = {queue_by_task[task]: task.result() for task in done}
+        for queue in results:
+            del self.tasks[queue]
+        return results
+        
 
 # it's best not to do this for now, to use any other approach instead
 # but recursion problems can likely be generalised away if items are marked for transformation,
