@@ -5,9 +5,16 @@ import aiorpcx, ssl, bit
 from .bitcoin import Header
 
 class ElectrumClient:
-    def __init__(self, peerstr = 'localhost:50001:t', keepalive_seconds = 450):
+    def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 450, max_transaction_size = 1_000_000_000):
+        if ' ' in peer and coin is not None:
+            host = peer.split(' ')[0]
+            kind = peer.split(' ')[-1]
+            port = coin.PEER_DEFAULT_PORTS[kind]
+            peer = f'{host}:{port}:{kind}'
+        else:
+            host, port, kind = peer.split(':')
         self.keepalive_seconds = keepalive_seconds
-        host, port, kind = peerstr.split(':')
+        self._max_transaction_size = max_transaction_size
         if kind not in 'st':
             raise AssertionError('expected :s for ssl or :t for tcp')
 
@@ -39,7 +46,7 @@ class ElectrumClient:
         self._max_header_chunk = 2016
         self.header_queues = set()
         self.scripthash_queues = {}
-        self.logger = logging.getLogger(self.__class__.__name__).getChild(peerstr)
+        self.logger = logging.getLogger(self.__class__.__name__).getChild(peer)
 
     async def init(self):
         transport, protocol = await self.client.create_connection()
@@ -48,6 +55,8 @@ class ElectrumClient:
         self.transport = transport
         self.protocol = protocol
         self.session = session
+
+        self.keepalive_task = asyncio.create_task(self._keepalive())
         
         banner = await self.request(str, 'server.banner')
         donation_address = await self.request(str, 'server.donation_address')
@@ -55,8 +64,6 @@ class ElectrumClient:
             print(self.host, banner)
         if donation_address:
             print(f'Donate to {self.host}:', donation_address)
-
-        self.keepalive_task = asyncio.create_task(self._keepalive())
 
         # this immediately gets the tip header
         await self.on_header(await self.request(dict, 'blockchain.headers.subscribe'))
@@ -73,6 +80,9 @@ class ElectrumClient:
     async def height(self):
         assert len(self._headers) == self._headers[-1].height + 1
         return len(self._headers) - 1
+
+    async def max_transaction_size(self):
+        return self._max_transaction_size
 
     async def header(self, height):
         result = self._headers[height] if height < len(self._headers) else None
