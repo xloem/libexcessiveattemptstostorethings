@@ -21,13 +21,11 @@ async def main():
             continue
 
 
-    print('WARN: bugs not fixed yet')
     print('\n=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=\n')
     bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False)
 
     await blockchain.delete()
 
-    print('WARN: bugs not fixed yet')
     print('flush was:', bcat.tx.hex_hash())
 
 asyncio.run(main())

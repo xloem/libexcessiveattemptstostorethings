@@ -1,7 +1,7 @@
 import bitcoinx
 from collections import namedtuple
 from dataclasses import dataclass, fields, MISSING
-import asyncio, typing
+import asyncio, mimetypes, typing
 
 from . import bitcoin
 
@@ -45,7 +45,7 @@ class bitcom:
                 break
             if typing.get_origin(field.type) is list and idx + 1 == len(cls_fields):
                 item_type, = typing.get_args(field.type)
-                params.append([convert_bytes_to[item_type](item) for item in ops[offset + idx:]])
+                params.append([convert_bytes_to[item_type](item.item) for item in ops[offset + idx:]])
             else:
                 params.append(convert_bytes_to[field.type](ops[offset + idx].item))
         result = cls(*params)
@@ -127,6 +127,10 @@ BCATPART.OVERHEAD_BYTES = len(
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
 async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True):
+
+    if media_type is None:
+        media_type, encoder = mimetypes.guess_type(filename)
+
     max_tx_size = await blockchain.max_transaction_size()
     max_B_datalen = max_tx_size - B.OVERHEAD_BYTES
     max_BCATPART_datalen = max_tx_size - BCATPART.OVERHEAD_BYTES
@@ -173,18 +177,23 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         # now flush data
         # shred onto blockchain
         # later we can add features to shred even more here
-        tx, unspent = BCATPART(to_flush).to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        OBJ = BCATPART(to_flush)
+        tx, unspent = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
         txid = await blockchain.broadcast(tx.to_bytes())
         unspent.txid = txid
         utxos = [unspent]
-        txhashes.append(bytes.fromhex(txid)[::-1])
+        txhashes.append(bytes.fromhex(txid))#[::-1])
+            # on bico.media, bcat txids are not byte-reversed !
 
-    bcat = BCAT(bcatinfo, media_type, encoding, filename, bcatflag, txhashes)
-    tx, unspent = bcat.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
-    txid = await blockchain.broadcast(tx.to_bytes())
-    unspent.txid = txid
-    bcat.tx = tx
-    return bcat, unspent
+    if len(txhashes) > 1:
+        OBJ = BCAT(bcatinfo, media_type, encoding, filename, bcatflag, txhashes)
+        tx, unspent = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        txid = await blockchain.broadcast(tx.to_bytes())
+        unspent.txid = txid
+    elif len(txhashes) == 0:
+        return None, utxos[0]
+    OBJ.tx = tx
+    return OBJ, unspent
     
 
 ## fileobj can be an io.BytesIO to wrap normal data
