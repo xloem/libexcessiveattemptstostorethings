@@ -15,7 +15,15 @@ class Queues:
         for queue in results:
             del self.tasks[queue]
         return results
-        
+
+def as_async(func):
+    if not asyncio.iscoroutinefunction(func):
+        async def asyncfunc(*params, **kwparams):
+            return func(*params, **kwparams)
+        return asyncfunc
+    else:
+        return func
+ 
 
 # it's best not to do this for now, to use any other approach instead
 # but recursion problems can likely be generalised away if items are marked for transformation,
