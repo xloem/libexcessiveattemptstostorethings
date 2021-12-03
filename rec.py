@@ -33,7 +33,7 @@ def temp_fifo(name = 'fifo'):
 
 def produce_data(fifo):
     sys.argv[1:1] = ['rec']
-    
+    sys.argv.append(fifo)
     try:
         asciinema()
     except SystemExit:
