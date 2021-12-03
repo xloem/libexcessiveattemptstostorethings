@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# thoughts on mempool exhaustion:
+## when per-kb fee is lower than a node is configured for, it by default only allows 25 unconfirmed chained txs
+## if fee is higher, it is more like a 10k chain
+
 import asyncio
 import curses
 import datetime
@@ -86,11 +90,20 @@ async def stream_up(stream, filename, info):
             rate = int(total_fee * 60 * 60 * 24 / (now - start_time) + 0.5) / 100_000_000
             sys.stderr.write(tput['sc'] + statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress)
+    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500, max_mempool_chain_length = 25)
+
+    print('flushing:', bcat.tx.hex_hash())
+
+    downpipe = await blockchain.watch_headers()
+    while True:
+        header = await downpipe.get()
+        tx = await blockchain.tx(None, None, bcat.tx.hex_hash(), None, verbose = True)
+        depth = header.height + 1 - tx['blockheight']
+        print(f'flush {depth}: {header.hex_hash}')
+        if depth >= 6:
+            break
 
     await blockchain.delete()
-
-    print('flush was:', bcat.tx.hex_hash())
 
 def compress_data(in_fifo, out_fifo, eof_event):
     compression_params = zstandard.ZstdCompressionParameters.from_level(22, write_checksum=True, enable_ldm=True)
@@ -119,7 +132,8 @@ def main():
     if is_help:
         produce_data('/dev/null')
     else:
-        logging.basicConfig(level = logging.INFO)
+        logging.basicConfig(level = logging.WARN)
+        #logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         fn = date + '.cast'
         with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
