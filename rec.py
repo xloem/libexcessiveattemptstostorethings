@@ -7,6 +7,7 @@ import random
 import sys
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 
 from bulletprooftoilet import electrum_client_2, bitcoin, bitcom
@@ -32,11 +33,11 @@ def temp_fifo(name = 'fifo'):
 
 def produce_data(fifo):
     sys.argv[1:1] = ['rec']
-    if '--help' not in sys.argv and '-h' not in sys.argv:
-        sys.argv.append(fifo)
-        print("Piping asciinema through", fifo)
     
-    asciinema()
+    try:
+        asciinema()
+    except SystemExit:
+        pass
 
 async def stream_up(stream, filename, info):
     # note: this private key is not private
@@ -57,13 +58,49 @@ async def stream_up(stream, filename, info):
     await blockchain.delete()
 
     print('flush was:', bcat.tx.hex_hash())
- 
-async def main():
-    date = datetime.datetime.now().isoformat(timespec = 'seconds')
-    fn = date + '.cast.zst'
-    with temp_fifo(fn) as fifo:
-        with open(fifo, 'rb') as fifo_input, zstandard.ZstdCompressor() as zstd:
-            zstd.copy_stream
-        await stream_up(fifo, fn, 'asciinema.zst')
 
-asyncio.run(main())
+def compress_data(in_fifo, out_fifo, eof_event):
+    compression_params = zstandard.ZstdCompressionParameters.from_level(22, write_checksum=True, enable_ldm=True)
+    # open call below blocks until data available
+    with open(in_fifo, 'rb') as uncompressed_stream, open(out_fifo, 'wb') as compressed_stream:
+        zstd = zstandard.ZstdCompressor(compression_params = compression_params)
+
+        with zstd.stream_writer(compressed_stream) as zstdsink:
+            while True:
+                new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
+                if len(new_data) > 0:
+                    zstdsink.write(new_data)
+                    zstdsink.flush()
+                elif eof_event.is_set():
+                    break
+                else:
+                    time.sleep(0.2)
+
+def send_data(in_fifo, filename):
+    with open(in_fifo, 'r') as compressed_stream:
+        asyncio.run(stream_up(compressed_stream, filename + '.zst', 'asciinema.zst'))
+
+ 
+def main():
+    is_help = '--help' in sys.argv or '-h' in sys.argv
+    if is_help:
+        produce_data('/dev/null')
+    else:
+        date = datetime.datetime.now().isoformat(timespec = 'seconds')
+        fn = date + '.cast'
+        with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
+            eof_event = threading.Event()
+            data_compressor = threading.Thread(target = compress_data, args=(uncompressed_fifo, compressed_fifo, eof_event))
+            data_compressor.start()
+            data_sender = threading.Thread(target = send_data, args=(compressed_fifo, fn))
+            data_sender.start()
+
+            # asciinema wants to be main thread
+            generated_data = produce_data(uncompressed_fifo)
+
+            eof_event.set()
+            data_compressor.join()
+            data_sender.join()
+
+main()
+
