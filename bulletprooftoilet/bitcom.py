@@ -206,6 +206,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         except bitcoin.TooLongMempoolChain:
             max_mempool_chain_length = len(await blockchain.addr_mempool(addr)) + 1
             accumulated_mempool_length = max_mempool_chain_length
+            continue
         unspent.txid = txid
         utxos = [unspent]
         txhashes.append(bytes.fromhex(txid))#[::-1])
