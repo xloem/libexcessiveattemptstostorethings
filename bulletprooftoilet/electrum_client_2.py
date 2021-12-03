@@ -2,7 +2,7 @@ import asyncio, logging, time
 
 import aiorpcx, ssl, bit
 
-from .bitcoin import Header
+from .bitcoin import Header, TooLongMempoolChain
 
 class ElectrumClient:
     def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 450, max_transaction_size = 1_000_000_000):
@@ -146,7 +146,13 @@ class ElectrumClient:
         return await self.request(dict if verbose else str, 'blockchain.transaction.get', txhash, verbose)
 
     async def broadcast(self, txbytes) -> str:
-        txid = await self.request(str, 'blockchain.transaction.broadcast', txbytes.hex())
+        try:
+            txid = await self.request(str, 'blockchain.transaction.broadcast', txbytes.hex())
+        except aiorpcx.jsonrpc.RPCError as error:
+            if error.code == 1: # BAD_REQUEST
+                if 'too-long-mempool-chain' in error.message:
+                    raise TooLongMempoolChain()
+            raise
         return txid
 
     async def min_fee(self):

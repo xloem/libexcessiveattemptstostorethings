@@ -1,7 +1,7 @@
 import bitcoinx
 from collections import namedtuple
 from dataclasses import dataclass, fields, MISSING
-import asyncio, mimetypes, typing
+import asyncio, mimetypes, time, typing
 
 from . import bitcoin
 
@@ -127,7 +127,9 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None):
+async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600):
+
+    last_block_time = time.time()
 
     if media_type is None:
         media_type, encoder = mimetypes.guess_type(filename)
@@ -136,7 +138,8 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     max_B_datalen = max_tx_size - B.OVERHEAD_BYTES
     max_BCATPART_datalen = max_tx_size - BCATPART.OVERHEAD_BYTES
 
-    utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
+    addr = bitcoin.privkey2addr(privkey)
+    utxos = await blockchain.addr_unspents(addr)
     if min_fee is None:
         min_fee = await blockchain.min_fee()
     if fee_per_kb is None:
@@ -146,6 +149,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     from . import util
     import os
     flow_backed_up = False
+    accumulated_mempool_length = len(await blockchain.addr_mempool(addr))
     def on_data():
         try:
             data = fileobj.buffer.read1()
@@ -163,10 +167,18 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     data = b''
     while True:
         updates_by_queue = await blockordata.get()
+        current_time = time.time()
+        if blockqueue in updates_by_queue:
+            accumulated_mempool_length = 0
+            block_seconds = (block_seconds + (current_time - last_block_time)) / 2
+            last_block_time = current_time
         if dataqueue in updates_by_queue:
             data += updates_by_queue[dataqueue]
             if flow_backed_up:
                 on_data()
+        if max_mempool_chain_length * (current_time - last_block_time) / block_seconds / 1.5 < accumulated_mempool_length:
+            # wait for mempool to drain
+            continue
         elif len(data) == 0:
             continue
         while len(data) < max_BCATPART_datalen and dataqueue.qsize() > 0:
@@ -189,7 +201,10 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             progress(None, insuf.needed, insuf.balance - insuf.needed)
             data = data + to_flush
             to_flush = to_flush[:0]
-            utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
+            utxos = await blockchain.addr_unspents(addr)
+            continue
+        except bitcoin.TooLongMempoolChain:
+            await blockqueue.get()
             continue
         unspent.txid = txid
         utxos = [unspent]
@@ -206,8 +221,12 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 break
             except bitcoin.InsufficientFunds as insuf:
                 progress(None, insuf.needed, insuf.balance - insuf.needed)
-                utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
+                time.sleep(1)
+                utxos = await blockchain.addr_unspents(addr)
                 continue
+            except bitcoin.TooLongMempoolChain:
+                max_mempool_chain_length = len(await blockchain.addr_mempool(addr)) + 1
+                accumulated_mempool_length = max_mempool_chain_length
         unspent.txid = txid
     elif len(txhashes) == 0:
         return None, utxos[0]

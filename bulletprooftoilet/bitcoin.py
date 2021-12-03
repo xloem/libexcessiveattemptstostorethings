@@ -9,6 +9,11 @@ class InsufficientFunds(OverflowError):
         self.needed = needed
         super().__init__(balance, needed)
 
+class TooLongMempoolChain(OverflowError):
+    def __init__(self, length = None):
+        self.length = length
+        super().__init__(length)
+
 def params2utxo(amount, txid, txindex, scriptpubkey = None, confirmations = None):
     return bit.network.meta.Unspent(amount, confirmations, scriptpubkey, txid, txindex)
 
