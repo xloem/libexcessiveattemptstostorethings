@@ -176,14 +176,14 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             data += updates_by_queue[dataqueue]
             if flow_backed_up:
                 on_data()
-        if max_mempool_chain_length * (current_time - last_block_time) / block_seconds / 1.5 < accumulated_mempool_length:
-            # wait for mempool to drain
-            continue
         elif len(data) == 0:
             continue
         while len(data) < max_BCATPART_datalen and dataqueue.qsize() > 0:
             data += dataqueue.get_nowait()
         if buffer and blockqueue not in update_by_queue and len(data) < max_BCATPART_datalen:
+            continue
+        if max_mempool_chain_length * (current_time - last_block_time) / block_seconds / 1.5 < accumulated_mempool_length:
+            # wait for mempool to drain
             continue
         to_flush = data[:max_BCATPART_datalen]
         data = data[len(to_flush):]
@@ -204,13 +204,14 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             utxos = await blockchain.addr_unspents(addr)
             continue
         except bitcoin.TooLongMempoolChain:
-            await blockqueue.get()
-            continue
+            max_mempool_chain_length = len(await blockchain.addr_mempool(addr)) + 1
+            accumulated_mempool_length = max_mempool_chain_length
         unspent.txid = txid
         utxos = [unspent]
         txhashes.append(bytes.fromhex(txid))#[::-1])
             # on bico.media, bcat txids are not byte-reversed !
 
+    # flush
     if len(txhashes) > 1:
         OBJ = BCAT(bcatinfo, media_type, encoding, filename, bcatflag, txhashes)
         while True:
@@ -225,8 +226,9 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 utxos = await blockchain.addr_unspents(addr)
                 continue
             except bitcoin.TooLongMempoolChain:
-                max_mempool_chain_length = len(await blockchain.addr_mempool(addr)) + 1
-                accumulated_mempool_length = max_mempool_chain_length
+                blockchain.logger.warn(f'Waiting for mempool to clear, size = {len(await blockchain.addr_mempool(addr))}')
+                await blockqueue.get()
+                continue
         unspent.txid = txid
     elif len(txhashes) == 0:
         return None, utxos[0]
