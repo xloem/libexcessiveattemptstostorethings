@@ -3,6 +3,7 @@
 import asyncio
 import curses
 import datetime
+import io
 import logging
 import os
 import random
@@ -17,6 +18,7 @@ import electrumx.lib.coins as coins
 
 from asciinema.__main__ import main as asciinema
 
+import segno
 import zstandard
 
 @contextmanager
@@ -58,12 +60,31 @@ async def stream_up(stream, filename, info):
     curses.setupterm()
     tput = {
         cap : curses.tigetstr(cap).decode()
-        for cap in ['sc', 'rc', 'cup']
+        for cap in ['sc', 'rc', 'cup', 'el']
     }
     statline = curses.tparm(tput['cup'].encode(), 2, 2).decode()
+
+    total_fee = 0
+    start_time = time.time()
     
     def progress(tx, fee, balance):
-        sys.stderr.write(tput['sc'] + statline + f'[[ FEE: {fee} ]]' + tput['rc'])
+        if balance < fee:
+            sys.stderr.write(tput['sc'] + statline)
+            addr = bitcoin.privkey2addr(privkey)
+            buf = io.StringIO()
+            segno.make(addr).terminal(buf, border=1)
+            msg = buf.getvalue() + f'INSUFFICIENT FUNDS PLEASE SEND {-balance} SAT TO {addr}'
+            lines = msg.split('\n')
+            for idx, line in enumerate(lines):
+                sys.stderr.write(curses.tparm(tput['cup'].encode(), idx, 0).decode() + tput['el'])
+                sys.stderr.write(line)
+            sys.stderr.write(tput['rc'])
+        else:
+            nonlocal total_fee
+            total_fee += fee
+            now = time.time()
+            rate = int(total_fee * 60 * 60 * 24 / (now - start_time) + 0.5) / 100_000_000
+            sys.stderr.write(tput['sc'] + statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
 
     bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress)
 

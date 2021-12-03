@@ -179,10 +179,16 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         # shred onto blockchain
         # later we can add features to shred even more here
         OBJ = BCATPART(to_flush)
-        tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
-        #blockchain.logger.debug(f'FEE: {fee}')
-        txid = await blockchain.broadcast(tx.to_bytes())
-        progress(tx, fee, balance)
+        try:
+            tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+            txid = await blockchain.broadcast(tx.to_bytes())
+            progress(tx, fee, balance)
+        except bitcoin.InsufficientFunds as insuf:
+            progress(None, insuf.needed, insuf.balance - insuf.needed)
+            data = data + to_flush
+            to_flush = to_flush[:0]
+            utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
+            continue
         unspent.txid = txid
         utxos = [unspent]
         txhashes.append(bytes.fromhex(txid))#[::-1])
@@ -190,10 +196,16 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
 
     if len(txhashes) > 1:
         OBJ = BCAT(bcatinfo, media_type, encoding, filename, bcatflag, txhashes)
-        tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
-        #blockchain.logger.debug(f'FEE: {fee}')
-        txid = await blockchain.broadcast(tx.to_bytes())
-        progress(tx, fee, balance)
+        while True:
+            try:
+                tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+                txid = await blockchain.broadcast(tx.to_bytes())
+                progress(tx, fee, balance)
+                break
+            except bitcoin.InsufficientFunds as insuf:
+                progress(None, insuf.needed, insuf.balance - insuf.needed)
+                utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
+                continue
         unspent.txid = txid
     elif len(txhashes) == 0:
         return None, utxos[0]

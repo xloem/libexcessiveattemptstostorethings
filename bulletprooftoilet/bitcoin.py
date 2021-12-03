@@ -3,6 +3,12 @@ import struct
 # intending to pick only one bitcoin structure library, atm there are two
 import bit, bitcoinx
 
+class InsufficientFunds(OverflowError):
+    def __init__(self, balance, needed):
+        self.balance = balance
+        self.needed = needed
+        super().__init__(balance, needed)
+
 def params2utxo(amount, txid, txindex, scriptpubkey = None, confirmations = None):
     return bit.network.meta.Unspent(amount, confirmations, scriptpubkey, txid, txindex)
 
@@ -91,7 +97,10 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
     fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1024) + 0.5)
+    if fee > fee_output.value:
+        raise InsufficientFunds(fee_output.value, fee)
     fee_output.value -= fee
+
 
     sighash = bitcoinx.SigHash.ALL
     if forkid:
