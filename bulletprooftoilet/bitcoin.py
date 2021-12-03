@@ -18,6 +18,24 @@ def hex2privkey(hex):
 def privkey2addr(privkey):
     return privkey.public_key.to_address().to_string()
 
+def hex2tx(hex):
+    return bitcoinx.Tx.from_hex(hex)
+
+async def input2utxo(input, blockchain):
+    txid = input.prev_hash
+    txpos = input.prev_idx
+    if txid == b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0' and txpos == 4294967295:
+        amnt = 'block reward'
+        script_pubkey = None # doesn't seem immediately needed, spending time elsewhere
+    else:
+        txid = txid[::-1].hex()
+        tx = await blockchain.tx(None, None, txid, None)
+        tx = hex2tx(tx)
+        output = tx.outputs[txpos]
+        amnt = output.value
+        script_pubkey = output.script_pubkey
+    return params2utxo(amnt, txid, txpos, script_pubkey)
+
 class Header:
     size = 80
     def __init__(self, raw, height):
@@ -96,7 +114,8 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     tx = bitcoinx.Tx(1, inputs, outputs, 0)
     
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
-    fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1024) + 0.5)
+        # note, bsv code seems to use 1000 for 1 kb
+    fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1000) + 0.5)
     if fee > fee_output.value:
         raise InsufficientFunds(fee_output.value, fee)
     fee_output.value -= fee

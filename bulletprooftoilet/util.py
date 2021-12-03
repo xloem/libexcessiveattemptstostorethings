@@ -4,7 +4,7 @@ class Queues:
     def __init__(self, *queues):
         self.queues = queues
         self.tasks = {}
-    async def get(self):
+    async def get(self) -> dict:
         for queue in self.queues:
             if queue not in self.tasks:
                 task = asyncio.create_task(queue.get())

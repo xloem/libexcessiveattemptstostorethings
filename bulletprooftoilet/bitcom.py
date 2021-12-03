@@ -127,7 +127,7 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None):
+async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None):
 
     if media_type is None:
         media_type, encoder = mimetypes.guess_type(filename)
@@ -137,8 +137,10 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     max_BCATPART_datalen = max_tx_size - BCATPART.OVERHEAD_BYTES
 
     utxos = await blockchain.addr_unspents(bitcoin.privkey2addr(privkey))
-    min_fee = await blockchain.min_fee()
-    fee_per_kb = await blockchain.fee_per_kb(100_000)
+    if min_fee is None:
+        min_fee = await blockchain.min_fee()
+    if fee_per_kb is None:
+        fee_per_kb = await blockchain.fee_per_kb(100_000)
     
     dataqueue = asyncio.Queue()
     from . import util
