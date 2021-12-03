@@ -72,7 +72,8 @@ class bitcom:
     def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
         from . import bitcoin
         pushdata = self.to_pushdata_list()
-        return bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, *pushdata, change_addr = change_addr, forkid = forkid)
+        tx, unspent, fee, remaining = bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, *pushdata, change_addr = change_addr, forkid = forkid)
+        return tx, unspent, fee, remaining
 
 @dataclass
 class B(bitcom):
@@ -126,7 +127,7 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True):
+async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None):
 
     if media_type is None:
         media_type, encoder = mimetypes.guess_type(filename)
@@ -178,8 +179,10 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         # shred onto blockchain
         # later we can add features to shred even more here
         OBJ = BCATPART(to_flush)
-        tx, unspent = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        #blockchain.logger.debug(f'FEE: {fee}')
         txid = await blockchain.broadcast(tx.to_bytes())
+        progress(tx, fee, balance)
         unspent.txid = txid
         utxos = [unspent]
         txhashes.append(bytes.fromhex(txid))#[::-1])
@@ -187,8 +190,10 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
 
     if len(txhashes) > 1:
         OBJ = BCAT(bcatinfo, media_type, encoding, filename, bcatflag, txhashes)
-        tx, unspent = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+        #blockchain.logger.debug(f'FEE: {fee}')
         txid = await blockchain.broadcast(tx.to_bytes())
+        progress(tx, fee, balance)
         unspent.txid = txid
     elif len(txhashes) == 0:
         return None, utxos[0]

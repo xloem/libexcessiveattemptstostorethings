@@ -20,7 +20,7 @@ class ElectrumClient:
 
         class Session(aiorpcx.RPCSession):
             async def handle_request(session, request):
-                print('handle request:', request)
+                self.logger.debug(f'handle request: {request}')
                 #import pdb; pdb.set_trace()
                 handler = None
                 if isinstance(request, aiorpcx.Notification):
@@ -62,9 +62,9 @@ class ElectrumClient:
         banner = await self.request(str, 'server.banner')
         donation_address = await self.request(str, 'server.donation_address')
         if banner:
-            print(self.host, banner)
+            self.logger.info(f'{self.host} {banner}')
         if donation_address:
-            print(f'Donate to {self.host}:', donation_address)
+            self.logger.info(f'Donate to {self.host}: {donation_address}')
 
         # this immediately gets the tip header
         await self.on_header(await self.request(dict, 'blockchain.headers.subscribe'))
@@ -261,15 +261,15 @@ class ElectrumClient:
     async def request(self, type, message, *params):
         try:
             async with aiorpcx.timeout_after(10):
-                print('->', message, *params)
+                self.logger.debug(f'-> {message} {params}')
                 result = await self.session.send_request(message, params)
-                print('<-', result)   
+                self.logger.debug(f'<- {result}')   
                 if not isinstance(result, type):
                     raise Exception(f'{message} return bad result type {type(result).__name__}')
                 self.last_message_received_at = time.time()
                 return result
         except aiorpcx.TaskTimeout:
-            print('timeout, reconnecting')
+            self.logger.warn('timeout, reconnecting')
             await self.delete()
             await self.init()
             return await self.request(type, message, *params)

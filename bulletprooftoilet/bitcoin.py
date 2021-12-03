@@ -91,7 +91,6 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
     fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1024) + 0.5)
-    print('FEE:', fee)
     fee_output.value -= fee
 
     sighash = bitcoinx.SigHash.ALL
@@ -105,4 +104,4 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
         input.script_sig = bitcoinx.Script() << privkey.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.to_bytes()
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
 
-    return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0)
+    return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0), fee, fee_output.value

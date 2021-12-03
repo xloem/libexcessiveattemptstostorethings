@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import asyncio
+import curses
 import datetime
+import logging
 import os
 import random
 import sys
@@ -53,7 +55,17 @@ async def stream_up(stream, filename, info):
         except OSError:
             continue
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False)
+    curses.setupterm()
+    tput = {
+        cap : curses.tigetstr(cap).decode()
+        for cap in ['sc', 'rc', 'cup']
+    }
+    statline = curses.tparm(tput['cup'].encode(), 2, 2).decode()
+    
+    def progress(tx, fee, balance):
+        sys.stderr.write(tput['sc'] + statline + f'[[ FEE: {fee} ]]' + tput['rc'])
+
+    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress)
 
     await blockchain.delete()
 
@@ -86,6 +98,7 @@ def main():
     if is_help:
         produce_data('/dev/null')
     else:
+        logging.basicConfig(level = logging.INFO)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         fn = date + '.cast'
         with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
