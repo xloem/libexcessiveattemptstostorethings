@@ -71,6 +71,7 @@ async def stream_up(stream, filename, info):
 
     total_fee = 0
     start_time = time.time()
+    last_time = start_time
     
     def progress(tx, fee, balance, status = ''):
         if balance < fee:
@@ -85,10 +86,14 @@ async def stream_up(stream, filename, info):
                 sys.stderr.write(line)
             sys.stderr.write(tput['rc'])
         else:
-            nonlocal total_fee
+            nonlocal total_fee, last_time
             total_fee += fee
-            now = time.time()
-            rate = int(total_fee * 60 * 60 * 24 / (now - start_time) + 0.5) / 100_000_000
+            if fee > 0:
+                last_time = time.time()
+            if last_time != start_time:
+                rate = int(total_fee * 60 * 60 * 24 / (last_time - start_time) + 0.5) / 100_000_000
+            else:
+                rate = '[no xfer yet]'
             sys.stderr.write(tput['sc'])
             sys.stderr.write(statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
             if status:
@@ -96,16 +101,16 @@ async def stream_up(stream, filename, info):
             sys.stderr.write(tput['rc'])
         sys.stderr.flush()
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500, max_mempool_chain_length = 25)
+    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500)#, max_mempool_chain_length = 25)
 
-    print('flushing:', bcat.tx.hex_hash())
+    print('flushing:', bcat.tx.hex_hash(), flush=True)
 
     downpipe = await blockchain.watch_headers()
     while True:
         header = await downpipe.get()
         tx = await blockchain.tx(None, None, bcat.tx.hash_hex(), None, verbose = True)
         depth = header.height + 1 - tx['blockheight']
-        print(f'flush {depth}: {header.hex_hash}')
+        print(f'flush {depth}: {header.hex_hash}', flush=True)
         if depth >= 6:
             break
 
