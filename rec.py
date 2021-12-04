@@ -101,7 +101,7 @@ async def stream_up(stream, filename, info):
             sys.stderr.write(tput['rc'])
         sys.stderr.flush()
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500)#, max_mempool_chain_length = 25)
+    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, max_mempool_chain_length = 50)#, fee_per_kb = 500)#, max_mempool_chain_length = 25)
 
     print('flushing:', bcat.tx.hex_hash(), flush=True)
 
@@ -124,7 +124,11 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
         tee_file += '.zst'
     # open call below blocks until data available
     with open(in_fifo, 'rb') as uncompressed_stream, open(out_fifo, 'wb') as compressed_stream, open(tee_file, 'wb') as compressed_tee_stream:
-        tee = io.BytesIO()
+        class Tee:
+            def write(self, data):
+                compressed_stream.write(data)
+                compressed_tee_stream.write(data)
+        tee = Tee()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
         with zstd.stream_writer(tee) as zstdsink:
             while True:
@@ -132,9 +136,6 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
                 if len(new_data) > 0:
                     zstdsink.write(new_data)
                     zstdsink.flush()
-                    compressed_stream.write(tee.getvalue())
-                    compressed_tee_stream.write(tee.getvalue())
-                    tee.truncate(0)
                 elif eof_event.is_set():
                     break
                 else:
