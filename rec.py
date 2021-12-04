@@ -94,6 +94,7 @@ async def stream_up(stream, filename, info):
             if status:
                 sys.stderr.write(statline2 + f'[[ {status} ]]')
             sys.stderr.write(tput['rc'])
+        sys.stderr.flush()
 
     bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500, max_mempool_chain_length = 25)
 
@@ -137,8 +138,8 @@ def main():
     if is_help:
         produce_data('/dev/null')
     else:
-        #logging.basicConfig(level = logging.WARN)
-        logging.basicConfig(level = logging.DEBUG)
+        logging.basicConfig(level = logging.WARN)
+        #logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         fn = date + '.cast'
         with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
