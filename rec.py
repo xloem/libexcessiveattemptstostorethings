@@ -108,7 +108,7 @@ async def stream_up(stream, filename, info):
     downpipe = await blockchain.watch_headers()
     while True:
         header = await downpipe.get()
-        tx = await blockchain.tx(None, None, bcat.tx.hash_hex(), None, verbose = True)
+        tx = await blockchain.tx(None, None, bcat.tx.hex_hash(), None, verbose = True)
         depth = header.height + 1 - tx['blockheight']
         print(f'flush {depth}: {header.hex_hash}', flush=True)
         if depth >= 6:
