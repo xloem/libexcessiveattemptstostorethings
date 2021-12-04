@@ -116,18 +116,25 @@ async def stream_up(stream, filename, info):
 
     await blockchain.delete()
 
-def compress_data(in_fifo, out_fifo, eof_event):
+def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
     compression_params = zstandard.ZstdCompressionParameters.from_level(22, write_checksum=True, enable_ldm=True)
+    if tee_file is None:
+        tee_file = '/dev/null'
+    else:
+        tee_file += '.zst'
     # open call below blocks until data available
-    with open(in_fifo, 'rb') as uncompressed_stream, open(out_fifo, 'wb') as compressed_stream:
+    with open(in_fifo, 'rb') as uncompressed_stream, open(out_fifo, 'wb') as compressed_stream, open(tee_file, 'wb') as compressed_tee_stream:
+        tee = io.BytesIO()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
-
-        with zstd.stream_writer(compressed_stream) as zstdsink:
+        with zstd.stream_writer(tee) as zstdsink:
             while True:
                 new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
                 if len(new_data) > 0:
                     zstdsink.write(new_data)
                     zstdsink.flush()
+                    compressed_stream.write(tee.getvalue())
+                    compressed_tee_stream.write(tee.getvalue())
+                    tee.truncate(0)
                 elif eof_event.is_set():
                     break
                 else:
@@ -143,13 +150,20 @@ def main():
     if is_help:
         produce_data('/dev/null')
     else:
+        if sys.argv[-1][0] != '-' and len(sys.argv) > 1:
+            teefile = sys.argv.pop()
+        else:
+            teefile = None
         logging.basicConfig(level = logging.WARN)
         #logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
-        fn = date + '.cast'
+        if teefile is None:
+            fn = date + '.cast'
+        else:
+            fn = os.path.basename(teefile)
         with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
             eof_event = threading.Event()
-            data_compressor = threading.Thread(target = compress_data, args=(uncompressed_fifo, compressed_fifo, eof_event))
+            data_compressor = threading.Thread(target = compress_data, args=(uncompressed_fifo, compressed_fifo, eof_event, teefile))
             data_compressor.start()
             data_sender = threading.Thread(target = send_data, args=(compressed_fifo, fn))
             data_sender.start()
