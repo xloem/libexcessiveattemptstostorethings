@@ -67,11 +67,12 @@ async def stream_up(stream, filename, info):
         for cap in ['sc', 'rc', 'cup', 'el']
     }
     statline = curses.tparm(tput['cup'].encode(), 2, 2).decode()
+    statline2 = curses.tparm(tput['cup'].encode(), 3, 2).decode()
 
     total_fee = 0
     start_time = time.time()
     
-    def progress(tx, fee, balance):
+    def progress(tx, fee, balance, status = ''):
         if balance < fee:
             sys.stderr.write(tput['sc'] + statline)
             addr = bitcoin.privkey2addr(privkey)
@@ -88,7 +89,11 @@ async def stream_up(stream, filename, info):
             total_fee += fee
             now = time.time()
             rate = int(total_fee * 60 * 60 * 24 / (now - start_time) + 0.5) / 100_000_000
-            sys.stderr.write(tput['sc'] + statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
+            sys.stderr.write(tput['sc'])
+            sys.stderr.write(statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
+            if status:
+                sys.stderr.write(statline2 + f'[[ {status} ]]')
+            sys.stderr.write(tput['rc'])
 
     bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = 500, max_mempool_chain_length = 25)
 
@@ -97,7 +102,7 @@ async def stream_up(stream, filename, info):
     downpipe = await blockchain.watch_headers()
     while True:
         header = await downpipe.get()
-        tx = await blockchain.tx(None, None, bcat.tx.hex_hash(), None, verbose = True)
+        tx = await blockchain.tx(None, None, bcat.tx.hash_hex(), None, verbose = True)
         depth = header.height + 1 - tx['blockheight']
         print(f'flush {depth}: {header.hex_hash}')
         if depth >= 6:
@@ -132,8 +137,8 @@ def main():
     if is_help:
         produce_data('/dev/null')
     else:
-        logging.basicConfig(level = logging.WARN)
-        #logging.basicConfig(level = logging.DEBUG)
+        #logging.basicConfig(level = logging.WARN)
+        logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         fn = date + '.cast'
         with temp_fifo(fn) as uncompressed_fifo, temp_fifo(fn) as compressed_fifo:
