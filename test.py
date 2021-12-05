@@ -2,7 +2,14 @@
 
 import asyncio, random
 
-from bulletprooftoilet import electrum_client_2, electrum_client, electrumx_client, blockchain_module, bitcoin, bitcom, util
+from bulletprooftoilet import electrum_client_2
+from bulletprooftoilet import electrum_client
+from bulletprooftoilet import electrumx_client
+from bulletprooftoilet import blockchain_module
+from bulletprooftoilet import bitcoin
+from bulletprooftoilet import bitcom
+from bulletprooftoilet import util
+#from bulletprooftoilet import electrum_client_2, electrum_client, electrumx_client, blockchain_module, bitcoin, bitcom, util
 
 import electrumx.lib.coins as coins
 
@@ -38,9 +45,9 @@ async def main():
         print(f'wrote {BJPG.media_type} to {BJPG_TXID}.jpg')
 
     blockchain = blockchainmodule.blockchain
-    scripthash = blockchain.addr_to_scripthash(privkey.public_key.to_address().to_string())
+    scripthash = blockchain.addr_to_scripthash(bitcoin.privkey2addr(privkey))
 
-    addr = privkey.public_key.to_address().to_string()
+    addr = bitcoin.privkey2addr(privkey)
     addr_updates = await blockchain.watch_addr(addr)
     header_updates = await blockchain.watch_headers()
     addr_and_header_updates = util.Queues(addr_updates, header_updates)
@@ -52,7 +59,7 @@ async def main():
     unspents = await blockchain.addr_unspents(addr)
     min_fee = await blockchain.min_fee()
     fee_per_kb = await blockchain.fee_per_kb(1000)
-    tx, unspent = bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, 'hello', 'world', forkid = True)#utxos, fee_per_kb, 'hello', 'world')
+    tx, unspent, fee, balance = bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, 'hello', 'world', forkid = True)#utxos, fee_per_kb, 'hello', 'world')
     print('sending tx:', tx.hex_hash())
     txid = await blockchainmodule.blockchain.broadcast(tx.to_bytes())
     print('sent', txid)

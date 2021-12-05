@@ -128,6 +128,9 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
             def write(self, data):
                 compressed_stream.write(data)
                 compressed_tee_stream.write(data)
+            def flush(self):
+                compressed_stream.flush()
+                compressed_tee_stream.flush()
         tee = Tee()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
         with zstd.stream_writer(tee) as zstdsink:

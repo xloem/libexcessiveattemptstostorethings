@@ -85,7 +85,7 @@ class B(bitcom):
 
 B.OVERHEAD_BYTES = len(
     B(b'', '').to_new_tx(
-        bitcoinx.PrivateKey.from_random(), 
+        bitcoin.PrivateKey.from_random(),
         [bitcoin.params2utxo(100000000, bitcoinx.sha256(b'')[::-1].hex(), 0)],
         200, 200
     )[0].to_bytes())
@@ -107,7 +107,7 @@ class BCATPART(bitcom):
 
 BCATPART.OVERHEAD_BYTES = len(
     BCATPART(b'').to_new_tx(
-        bitcoinx.PrivateKey.from_random(),
+        bitcoin.PrivateKey.from_random(),
         [bitcoin.params2utxo(100000000, bitcoinx.sha256(b'')[::-1].hex(), 0)],
         200, 200
     )[0].to_bytes())

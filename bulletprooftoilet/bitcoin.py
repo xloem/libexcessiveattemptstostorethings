@@ -1,7 +1,24 @@
 import struct
 
-# intending to pick only one bitcoin structure library, atm there are two
-import bit, bitcoinx
+try:
+    from .bitcoin_bit import *
+except ModuleNotFoundError:
+    raise
+
+try:
+    from .bitcoin_bitcoinx import *
+except ModuleNotFoundError:
+    raise
+
+try:
+    import pycoin
+except ModuleNotFoundError:
+    pass
+
+hex2tx = Tx.from_hex
+
+hex2privkey = PrivateKey.from_hex
+privkey2addr = PrivateKey.addr_str.fget
 
 class InsufficientFunds(OverflowError):
     def __init__(self, balance, needed):
@@ -14,18 +31,6 @@ class TooLongMempoolChain(OverflowError):
         self.length = length
         super().__init__(length)
 
-def params2utxo(amount, txid, txindex, scriptpubkey = None, confirmations = None):
-    return bit.network.meta.Unspent(amount, confirmations, scriptpubkey, txid, txindex)
-
-def hex2privkey(hex):
-    return bitcoinx.PrivateKey.from_hex(hex)
-
-def privkey2addr(privkey):
-    return privkey.public_key.to_address().to_string()
-
-def hex2tx(hex):
-    return bitcoinx.Tx.from_hex(hex)
-
 async def input2utxo(input, blockchain):
     txid = input.prev_hash
     txpos = input.prev_idx
@@ -36,8 +41,8 @@ async def input2utxo(input, blockchain):
         txid = txid[::-1].hex()
         tx = await blockchain.tx(None, None, txid, None)
         tx = hex2tx(tx)
-        output = tx.outputs[txpos]
-        amnt = output.value
+        output = tx2outputs(tx)[txpos]
+        amnt = output2value(output)
         script_pubkey = output.script_pubkey
     return params2utxo(amnt, txid, txpos, script_pubkey)
 
@@ -88,14 +93,16 @@ class Header:
         return self.merkle_root[::-1].hex()
 
 def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None, forkid = False):
-    if type(privkey) is not bitcoinx.PrivateKey:
-        privkey = bitcoinx.PrivateKey(privkey)
-    pubkey = privkey.public_key
+    if type(privkey) is str:
+        privkey = PrivateKey.from_hex(privkey)
+    elif type(privkey) is bytes:
+        privkey = PrivateKey.from_bytes(privkey)
+    pubkey = privkey.pub
     if change_addr is None:
-        change_addr = pubkey.to_address()
+        change_addr = pubkey.addr
     elif not instanceof(change_addr, bitcoinx.Address):
         change_addr = bitcoinx.P2PKH_Address.from_string(change_addr)
-    scriptpubkey = pubkey.P2PKH_script()
+    scriptpubkey = pubkey.p2pkh
     inputs = []
     value = 0
     for unspent in unspents:
@@ -134,7 +141,7 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     #scriptsig = bitcoinx.Script() << sig << pubkey.to_bytes()
     for idx, (unspent, input) in enumerate(zip(unspents, inputs)):
         #input.scriptsig = scriptsig
-        input.script_sig = bitcoinx.Script() << privkey.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.to_bytes()
+        input.script_sig = bitcoinx.Script() << privkey.bitcoinx.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.bitcoinx.to_bytes()
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
 
     return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0), fee, fee_output.value
