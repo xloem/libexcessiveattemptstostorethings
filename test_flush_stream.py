@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-import asyncio, random, sys
+import asyncio, logging, random, sys
 
 from bulletprooftoilet import electrum_client_2, bitcoin, bitcom
 
 import electrumx.lib.coins as coins
 
 async def main():
+    logging.basicConfig(level = logging.DEBUG)
+
     # note: this private key is not private
     privkey = bitcoin.hex2privkey('088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279')
 
@@ -22,7 +24,7 @@ async def main():
 
 
     print('\n=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=\n')
-    bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False)
+    bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False, fee_per_kb = 250)
 
     await blockchain.delete()
 

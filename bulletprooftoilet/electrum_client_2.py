@@ -152,6 +152,8 @@ class ElectrumClient:
             if error.code == 1: # BAD_REQUEST
                 if 'too-long-mempool-chain' in error.message:
                     raise TooLongMempoolChain()
+                elif '66: mempool min fee not met' in error.message:
+                    raise InsufficientFee(error.message)
             raise
         return txid
 

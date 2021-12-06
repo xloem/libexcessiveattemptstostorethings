@@ -127,9 +127,9 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600, buffer_min_fee_txs = True):
+async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600, buffer_min_fee_txs = True, primary_min_fee = None, primary_fee_per_kb = None):
 
-    last_block_time = time.time()
+    last_block_time = (await blockchain.header(await blockchain.height())).timestamp
 
     if media_type is None:
         media_type, encoder = mimetypes.guess_type(filename)
@@ -142,8 +142,15 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     utxos = await blockchain.addr_unspents(addr)
     if min_fee is None:
         min_fee = await blockchain.min_fee()
+    min_fee = int(min_fee + 0.5)
     if fee_per_kb is None:
         fee_per_kb = await blockchain.fee_per_kb(100_000)
+    secondary_min_fee = min_fee
+    secondary_fee_per_kb = fee_per_kb
+    if primary_min_fee is None:
+        primary_min_fee = min_fee
+    if primary_fee_per_kb is None:
+        primary_fee_per_kb = fee_per_kb
     
     dataqueue = asyncio.Queue()
     from . import util
@@ -174,6 +181,8 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             accumulated_mempool_length = 0
             block_seconds = (block_seconds + (current_time - last_block_time)) / 2
             last_block_time = current_time
+            min_fee = secondary_min_fee
+            fee_per_kb = secondary_fee_per_kb
         if dataqueue in updates_by_queue:
             new_data = updates_by_queue[dataqueue]
             if len(new_data) > 0:
@@ -195,36 +204,57 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         else:
             expected_mempool_length = max_mempool_chain_length
         if expected_mempool_length < accumulated_mempool_length:
-            # wait for mempool to drain
+            blockchain.logger.debug('waiting for mempool to drain')
             continue
         to_flush = data[:max_BCATPART_datalen]
         data = data[len(to_flush):]
         if len(to_flush) == 0 and len(data) == 0 and not stream_open:
+            blockchain.logger.debug('stream closed')
             break
         # now flush data
         # shred onto blockchain
         # later we can add features to shred even more here
         OBJ = BCATPART(to_flush)
         try:
-            tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
-            if fee == min_fee and buffer_min_fee_txs:
+            if accumulated_mempool_length >= max_mempool_chain_length:
+                tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, primary_min_fee, primary_fee_per_kb, forkid = forkid)
+            else:
+                tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
+            if fee_per_kb > 0 and fee == min_fee and buffer_min_fee_txs and stream_open:
                 data = to_flush + data
                 to_flush = to_flush[:0]
+                blockchain.logger.debug(f'rebuffering until byte cost exceeds min fee of {min_fee}')
                 continue
-            txid = await blockchain.broadcast(tx.to_bytes())
+            tx_bytes = tx.to_bytes()
+            blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
+            txid = await blockchain.broadcast(tx_bytes)
             accumulated_mempool_length += 1
-            progress(tx, fee, balance)
+            last_tx = tx_bytes
+            await progress(tx, fee, balance)
         except bitcoin.InsufficientFunds as insuf:
-            progress(None, insuf.needed, insuf.balance - insuf.needed)
+            await progress(None, insuf.needed, insuf.balance - insuf.needed)
             data = data + to_flush
             to_flush = to_flush[:0]
+            blockchain.logger.debug('checking balance again')
             utxos = await blockchain.addr_unspents(addr)
             continue
         except bitcoin.TooLongMempoolChain:
-            max_mempool_chain_length = len(await blockchain.addr_mempool(addr)) + 1
-            accumulated_mempool_length = max_mempool_chain_length
+            max_mempool_chain_length = len(await blockchain.addr_mempool(addr))
+
+            data = data + to_flush
+            to_flush = to_flush[:0]
+            blockchain.logger.debug('node mempool length reached')
+            #min_fee = primary_min_fee
+            #fee_per_kb = primary_fee_per_kb
+
+            # tx, fee, balance = bitcoin.bumped_fee(privkey, tx, last_utxos, primary_min_fee, primary_fee_per_kb, privkey.pub.addr_str)
+            # tx = tx.to_bytes()
+            # blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
+            # txid = await blockchain.broadcast(tx)
+            # await progress(tx, fee, balance)
             continue
         unspent.txid = txid
+        last_utxos = utxos
         utxos = [unspent]
         txhashes.append(bytes.fromhex(txid))#[::-1])
             # on bico.media, bcat txids are not byte-reversed !
@@ -237,21 +267,25 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 blockchain.logger.debug('try flush')
                 tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
                 txid = await blockchain.broadcast(tx.to_bytes())
-                progress(tx, fee, balance)
+                await progress(tx, fee, balance)
                 break
             except bitcoin.InsufficientFunds as insuf:
-                progress(None, insuf.needed, insuf.balance - insuf.needed)
+                await progress(None, insuf.needed, insuf.balance - insuf.needed)
                 time.sleep(1)
                 utxos = await blockchain.addr_unspents(addr)
                 continue
             except bitcoin.TooLongMempoolChain:
-                blockchain.logger.warn(f'Waiting for mempool to clear, size = {len(await blockchain.addr_mempool(addr))}')
-                await blockqueue.get()
+                if min_fee < primary_min_fee or fee_per_kb < primary_fee_per_kb:
+                    min_fee = primary_min_fee
+                    fee_per_kb = primary_fee_per_kb
+                else:
+                    blockchain.logger.warn(f'Waiting for mempool to clear, size = {len(await blockchain.addr_mempool(addr))}')
+                    await blockqueue.get()
                 continue
         blockchain.logger.debug('flushed')
         unspent.txid = txid
     elif len(txhashes) == 0:
-        blockchain.logger.debug('flushed 1')
+        blockchain.logger.debug('nothing to flush')
         return None, utxos[0]
     OBJ.tx = tx
     return OBJ, unspent

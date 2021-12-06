@@ -1,4 +1,4 @@
-import struct
+import math, struct
 
 try:
     from .bitcoin_bit import *
@@ -30,6 +30,11 @@ class TooLongMempoolChain(OverflowError):
     def __init__(self, length = None):
         self.length = length
         super().__init__(length)
+
+class InsufficientFee(OverflowError):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(message)
 
 async def input2utxo(input, blockchain):
     txid = input.prev_hash
@@ -92,6 +97,52 @@ class Header:
     def merkle_root_hex(self):
         return self.merkle_root[::-1].hex()
 
+def bumped_fee(privkey, tx, utxos, min_fee, fee_per_kb, change_addr):
+    if type(privkey) is str:
+        privkey = PrivateKey.from_hex(privkey)
+    elif type(privkey) is bytes:
+        privkey = PrivateKey.from_bytes(privkey)
+    pubkey = privkey.pub
+    if type(tx) is bytes:
+        tx = Tx.from_bytes(tx)
+    elif type(tx) is str:
+        tx = Tx.from_hex(tx)
+    else:
+        tx = Tx.from_bytes(tx.to_bytes())
+
+    if not instanceof(change_addr, bitcoinx.Address):
+        change_addr = bitcoinx.P2PKH_Address.from_string(change_addr)
+    change_script = change_addr.to_script()
+    scriptpubkey = pubkey.p2pkh
+
+    fee = math.ceil(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1000))
+    available = sum((utxo.amount for utxo in utxos))
+    replaced_fee = available - sum((output.value for output in tx.bitcoinx.outputs))
+    diff = replaced_fee - fee
+    available = replaced_fee
+    for output in tx.bitcoinx.outputs:
+        if diff <= 0:
+            break
+        if output.script_pubkey == change_script:
+            available += output.value
+            if diff > output.value:
+                output.value -= diff
+                diff = 0
+            else:
+                diff -= output.value
+                output.value = 0
+    if diff > 0:
+        raise InsufficientFunds(available, fee)
+
+    pubkeybytes = pubkey.bitcoinx.to_bytes()
+    for idx, (unspent, input) in enumerate(zip(utxos, tx.bitcoinx.inputs)):
+        ops = [*input.script_sig.ops()]
+        if len(ops) == 2 and ops[-1] == pubkeybytes:
+            sighash = bitcoinx.SigHash.from_bytes(ops[0][-1])
+            input.script_sig = bitcoinx.Script() << privkey.bitcoinx.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.bitcoinx.to_bytes()
+
+    return tx, fee, available - fee
+
 def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None, forkid = False):
     if type(privkey) is str:
         privkey = PrivateKey.from_hex(privkey)
@@ -126,11 +177,6 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     tx = bitcoinx.Tx(1, inputs, outputs, 0)
     
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
-        # note, bsv code seems to use 1000 for 1 kb
-    fee = int(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1000) + 0.5)
-    if fee > fee_output.value:
-        raise InsufficientFunds(fee_output.value, fee)
-    fee_output.value -= fee
 
 
     sighash = bitcoinx.SigHash.ALL
@@ -139,9 +185,19 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
     #sig += sighash.to_bytes(1, 'little')
     #scriptsig = bitcoinx.Script() << sig << pubkey.to_bytes()
-    for idx, (unspent, input) in enumerate(zip(unspents, inputs)):
-        #input.scriptsig = scriptsig
-        input.script_sig = bitcoinx.Script() << privkey.bitcoinx.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.bitcoinx.to_bytes()
+
+    while True:
+        # note, bsv code seems to use 1000 for 1 kb
+        fee = math.ceil(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1000))
+        if fee <= value - fee_output.value:
+            # estimate met reality
+            break
+        if fee > value:
+            raise InsufficientFunds(fee_output.value, fee)
+        fee_output.value = value - fee
+        for idx, (unspent, input) in enumerate(zip(unspents, inputs)):
+            #input.scriptsig = scriptsig
+            input.script_sig = bitcoinx.Script() << privkey.bitcoinx.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.bitcoinx.to_bytes()
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
 
     return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0), fee, fee_output.value

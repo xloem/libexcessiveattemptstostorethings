@@ -52,6 +52,10 @@ async def stream_up(stream, filename, info):
     privkey = bitcoin.hex2privkey('088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279')
 
     coin = coins.BitcoinSV
+    fee_per_kb = 250
+    mempool_depth = 25
+    block_seconds = 600
+
     while True:
         try:
             peer = random.choice(coin.PEERS)
@@ -60,6 +64,11 @@ async def stream_up(stream, filename, info):
             break
         except OSError:
             continue
+
+    min_fee = await blockchain.min_fee()
+    primary_fee_per_kb = await blockchain.fee_per_kb(1000)
+    global xfer_seconds
+    xfer_seconds = block_seconds / mempool_depth
 
     curses.setupterm()
     tput = {
@@ -73,7 +82,7 @@ async def stream_up(stream, filename, info):
     start_time = time.time()
     last_time = start_time
     
-    def progress(tx, fee, balance, status = ''):
+    async def progress(tx, fee, balance, status = ''):
         if balance < fee:
             sys.stderr.write(tput['sc'] + statline)
             addr = bitcoin.privkey2addr(privkey)
@@ -100,8 +109,12 @@ async def stream_up(stream, filename, info):
                 sys.stderr.write(statline2 + f'[[ {status} ]]')
             sys.stderr.write(tput['rc'])
         sys.stderr.flush()
+        #if balance >= fee and tx is not None:
+        #    if not flush_lock.locked():
+        #        await flush_lock.acquire()
+    #await flush_lock.acquire()
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, max_mempool_chain_length = 50)#, fee_per_kb = 500)#, max_mempool_chain_length = 25)
+    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
 
     print('flushing:', bcat.tx.hex_hash(), flush=True)
 
@@ -109,13 +122,18 @@ async def stream_up(stream, filename, info):
     while True:
         header = await downpipe.get()
         tx = await blockchain.tx(None, None, bcat.tx.hex_hash(), None, verbose = True)
-        depth = header.height + 1 - tx['blockheight']
-        print(f'flush {depth}: {header.hash_hex}', flush=True)
-        if depth >= 6:
-            break
+        if 'blockheight' in tx:
+            depth = header.height + 1 - tx['blockheight']
+            print(f'flush {depth}: {header.hash_hex}', flush=True)
+            if depth >= 6:
+                break
+        else:
+            print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
 
     await blockchain.delete()
 
+#flush_lock = asyncio.Lock()
+xfer_seconds = 600
 def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
     compression_params = zstandard.ZstdCompressionParameters.from_level(22, write_checksum=True, enable_ldm=True)
     if tee_file is None:
@@ -133,12 +151,18 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
                 compressed_tee_stream.flush()
         tee = Tee()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
+        last_time = time.time()
         with zstd.stream_writer(tee) as zstdsink:
             while True:
                 new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
                 if len(new_data) > 0:
                     zstdsink.write(new_data)
-                    zstdsink.flush()
+                    now = time.time()
+                    if now - last_time >= xfer_seconds:
+                    #if flush_lock.locked():
+                    #    flush_lock.release()
+                        zstdsink.flush()
+                        last_time = now
                 elif eof_event.is_set():
                     break
                 else:
@@ -158,8 +182,8 @@ def main():
             teefile = sys.argv.pop()
         else:
             teefile = None
-        logging.basicConfig(level = logging.WARN)
-        #logging.basicConfig(level = logging.DEBUG)
+        #logging.basicConfig(level = logging.WARN)
+        logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         if teefile is None:
             fn = date + '.cast'

@@ -9,6 +9,9 @@ def Compose(cls):
 
 class Tx(Compose(bitcoinx.Tx)):
     @staticmethod
+    def from_bytes(bytes):
+        return Tx(bitcoinx.Tx(bytes))
+    @staticmethod
     def from_hex(hex):
         return Tx(bitcoinx.Tx.from_hex(hex))
     @property
