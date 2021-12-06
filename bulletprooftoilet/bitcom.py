@@ -178,7 +178,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         current_time = time.time()
         if blockqueue in updates_by_queue:
             blockchain.logger.debug('block update')
-            accumulated_mempool_length = 0
+            accumulated_mempool_length = len(await blockchain.addr_mempool(addr))
             block_seconds = (block_seconds + (current_time - last_block_time)) / 2
             last_block_time = current_time
             min_fee = secondary_min_fee
