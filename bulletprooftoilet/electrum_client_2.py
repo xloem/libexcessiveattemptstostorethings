@@ -293,3 +293,10 @@ class ElectrumClient:
             await self.delete()
             await self.init()
             return await self.request(type, message, *params)
+        except aiorpcx.jsonrpc.RPCError as er:
+            self.logger.warn(error.message)
+            if error.code == aiorpcx.jsonrpc.JSONRPC.EXCESSIVE_RESOURCE_USAGE:
+                await asyncio.sleep(0.2)
+                return await self.request(type, message, *params)
+            else:
+                raise
