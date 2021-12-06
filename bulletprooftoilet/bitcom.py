@@ -226,7 +226,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 blockchain.logger.debug(f'rebuffering until byte cost exceeds min fee of {min_fee}')
                 continue
             tx_bytes = tx.to_bytes()
-            blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
+            blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx_bytes)}; {fee_per_kb}*{len(tx_bytes)/1000}={fee_per_kb*len(tx_bytes)//1000} overhead={len(tx_bytes)-len(to_flush)}')
             txid = await blockchain.broadcast(tx_bytes)
             accumulated_mempool_length += 1
             last_tx = tx_bytes
