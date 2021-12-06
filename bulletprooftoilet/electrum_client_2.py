@@ -161,6 +161,20 @@ class ElectrumClient:
     async def fee_per_kb(self, blocks):
         return await self.request(float, 'blockchain.estimatefee', blocks) * 100000000
 
+    async def peers(self):
+        result = []
+        peers = await self.request(list, 'server.peers.subscribe')
+        for ip, host, (ver, *kinds) in peers:
+            if host.endswith('.onion'):
+                kind = random.choice(kinds)
+            else:
+                host = ip
+                for kind in kinds:
+                    if kind[0] == 's':
+                        break
+            result.append(f'{host}:{kind[1:]}:{kind[0]}')
+        return result
+
     @staticmethod
     def addr_to_p2pkh(addr):
         return bit.transaction.address_to_scriptpubkey(addr)

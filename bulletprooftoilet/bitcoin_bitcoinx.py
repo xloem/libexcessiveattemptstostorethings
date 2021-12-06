@@ -11,11 +11,22 @@ class Tx(Compose(bitcoinx.Tx)):
     @staticmethod
     def from_hex(hex):
         return Tx(bitcoinx.Tx.from_hex(hex))
+    @property
+    def inputs(self):
+        return self.bitcoinx.inputs
+    @property
+    def outputs(self):
+        return self.bitcoinx.outputs
 
 class Output(Compose(bitcoinx.TxOutput)):
     @property
     def value(self):
         return self.bitcoinx.value
+
+#class Input(Compose(bitcoinx.TxOutput)):
+#    @property
+#    def value(self):
+#        return self.bitcoinx.value
 
 class PrivateKey(Compose(bitcoinx.PrivateKey)):
     @property
