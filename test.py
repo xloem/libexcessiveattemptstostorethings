@@ -60,8 +60,8 @@ async def main():
     min_fee = await blockchain.min_fee()
     fee_per_kb = await blockchain.fee_per_kb(1000)
     tx, unspent, fee, balance = bitcoin.op_return(privkey, unspents, min_fee, fee_per_kb, 'hello', 'world', forkid = True)#utxos, fee_per_kb, 'hello', 'world')
-    print('sending tx:', tx.hex_hash())
-    txid = await blockchainmodule.blockchain.broadcast(tx.to_bytes())
+    print('sending tx:', tx.hash_hex)
+    txid = await blockchainmodule.blockchain.broadcast(tx.bytes)
     print('sent', txid)
 
     #await asyncio.sleep(60*30)
