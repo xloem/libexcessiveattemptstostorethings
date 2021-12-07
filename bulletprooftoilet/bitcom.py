@@ -88,7 +88,7 @@ B.OVERHEAD_BYTES = len(
         bitcoin.PrivateKey.from_random(),
         [bitcoin.params2utxo(100000000, bitcoinx.sha256(b'')[::-1].hex(), 0)],
         200, 200
-    )[0].to_bytes())
+    )[0].bytes)
 
 @dataclass
 class BCAT(bitcom):
@@ -110,7 +110,7 @@ BCATPART.OVERHEAD_BYTES = len(
         bitcoin.PrivateKey.from_random(),
         [bitcoin.params2utxo(100000000, bitcoinx.sha256(b'')[::-1].hex(), 0)],
         200, 200
-    )[0].to_bytes())
+    )[0].bytes)
 
 #async def autodata(filename, data, max_tx_size, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0'):
 #    max_B_datalen = max_tx_size - B.OVERHEAD_BYTES
@@ -127,7 +127,10 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = lambda tx, fee, balance: None, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600, buffer_min_fee_txs = True, primary_min_fee = None, primary_fee_per_kb = None):
+async def default_progress(tx, fee, balance):
+    pass
+
+async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = default_progress, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600, buffer_min_fee_txs = True, primary_min_fee = None, primary_fee_per_kb = None):
 
     last_block_time = (await blockchain.header(await blockchain.height())).timestamp
 
@@ -179,6 +182,8 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
         if blockqueue in updates_by_queue:
             blockchain.logger.debug('block update')
             accumulated_mempool_length = len(await blockchain.addr_mempool(addr))
+            if accumulated_mempool_length > 0:
+                blockchain.logger.warn(f'{accumulated_mempool_length} txs were not confirmed')
             block_seconds = (block_seconds + (current_time - last_block_time)) / 2
             last_block_time = current_time
             min_fee = secondary_min_fee
@@ -225,7 +230,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 to_flush = to_flush[:0]
                 blockchain.logger.debug(f'rebuffering until byte cost exceeds min fee of {min_fee}')
                 continue
-            tx_bytes = tx.to_bytes()
+            tx_bytes = tx.bytes
             blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx_bytes)}; {fee_per_kb}*{len(tx_bytes)/1000}={fee_per_kb*len(tx_bytes)//1000} overhead={len(tx_bytes)-len(to_flush)}')
             txid = await blockchain.broadcast(tx_bytes)
             accumulated_mempool_length += 1
@@ -248,7 +253,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             #fee_per_kb = primary_fee_per_kb
 
             # tx, fee, balance = bitcoin.bumped_fee(privkey, tx, last_utxos, primary_min_fee, primary_fee_per_kb, privkey.pub.addr_str)
-            # tx = tx.to_bytes()
+            # tx = tx.bytes
             # blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
             # txid = await blockchain.broadcast(tx)
             # await progress(tx, fee, balance)
@@ -266,7 +271,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             try:
                 blockchain.logger.debug('try flush')
                 tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
-                txid = await blockchain.broadcast(tx.to_bytes())
+                txid = await blockchain.broadcast(tx.bytes)
                 await progress(tx, fee, balance)
                 break
             except bitcoin.InsufficientFunds as insuf:

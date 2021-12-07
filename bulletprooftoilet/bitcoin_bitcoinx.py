@@ -8,6 +8,23 @@ def Compose(cls):
     return Compose
 
 class Tx(Compose(bitcoinx.Tx)):
+    def __init__(self, src):
+        if type(src) is bytes:
+            src = bitcoinx.Tx(bytes)
+        elif type(src) is str:
+            src = bitcoinx.Tx.from_hex(hex)
+        elif type(src) is Tx:
+            src = src.bitcoinx
+        super().__init__(src)
+    @property
+    def bytes(self):
+        return self.bitcoinx.to_bytes()
+    @property
+    def hex(self):
+        return self.bitcoinx.to_hex()
+    @property
+    def hash_hex(self):
+        return self.bitcoinx.hex_hash()
     @staticmethod
     def from_bytes(bytes):
         return Tx(bitcoinx.Tx(bytes))
@@ -32,6 +49,16 @@ class Output(Compose(bitcoinx.TxOutput)):
 #        return self.bitcoinx.value
 
 class PrivateKey(Compose(bitcoinx.PrivateKey)):
+    def __init__(self, src = None):
+        if type(src) is str:
+            src = bitcoinx.PrivateKey.from_hex(hex)
+        elif type(src) is bytes:
+            src = bitcoinx.PrivateKey(bytes)
+        elif src is None:
+            src = bitcoinx.PrivateKey.from_random()
+        elif type(src) is PrivateKey:
+            src = src.bitcoinx
+        super().__init__(src)
     @property
     def addr_str(self):
         return self.bitcoinx.public_key.to_address().to_string()

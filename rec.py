@@ -39,6 +39,23 @@ def temp_fifo(name = 'fifo'):
     finally:
         os.rmdir(tmpdir)  # Remove directory
 
+## dual-stream logging config from stackoverflow
+
+#Get the root logger
+logger = logging.getLogger()
+#Have to set the root logger level, it defaults to logging.WARNING
+logger.setLevel(logging.NOTSET)
+
+logging_handler_file = logging.FileHandler("rec.log")
+logging_handler_file.setLevel(logging.DEBUG)
+logger.addHandler(logging_handler_file)
+
+logging_handler_err = logging.StreamHandler(sys.stderr)
+logging_handler_err.setLevel(logging.WARNING)
+logger.addHandler(logging_handler_err)
+
+## ##
+
 def produce_data(fifo):
     sys.argv[1:1] = ['rec']
     sys.argv.append(fifo)
@@ -56,13 +73,14 @@ async def stream_up(stream, filename, info):
     mempool_depth = 25
     block_seconds = 600
 
+    peer = 'sv.usebsv.com s'
     while True:
         try:
-            peer = random.choice(coin.PEERS)
             blockchain = electrum_client_2.ElectrumClient(peer, coin=coin)
             await blockchain.init()
             break
         except OSError:
+            peer = random.choice(coin.PEERS)
             continue
 
     min_fee = await blockchain.min_fee()
@@ -75,25 +93,30 @@ async def stream_up(stream, filename, info):
         cap : curses.tigetstr(cap).decode()
         for cap in ['sc', 'rc', 'cup', 'el']
     }
-    statline = curses.tparm(tput['cup'].encode(), 2, 2).decode()
-    statline2 = curses.tparm(tput['cup'].encode(), 3, 2).decode()
+    #statline = curses.tparm(tput['cup'].encode(), 2, 2).decode()
+    #statline2 = curses.tparm(tput['cup'].encode(), 3, 2).decode()
 
     total_fee = 0
     start_time = time.time()
     last_time = start_time
-    
-    async def progress(tx, fee, balance, status = ''):
-        if balance < fee:
-            sys.stderr.write(tput['sc'] + statline)
-            addr = bitcoin.privkey2addr(privkey)
-            buf = io.StringIO()
-            segno.make(addr).terminal(buf, border=1)
-            msg = buf.getvalue() + f'INSUFFICIENT FUNDS PLEASE SEND {-balance} SAT TO {addr}'
+
+    def progress_msg(msg):
+            sys.stderr.write(tput['sc'])# + statline)
             lines = msg.split('\n')
             for idx, line in enumerate(lines):
                 sys.stderr.write(curses.tparm(tput['cup'].encode(), idx, 0).decode() + tput['el'])
                 sys.stderr.write(line)
+                blockchain.logger.info(line)
             sys.stderr.write(tput['rc'])
+            sys.stderr.flush()
+    
+    async def progress(tx, fee, balance, status = ''):
+        if balance < fee:
+            addr = bitcoin.privkey2addr(privkey)
+            buf = io.StringIO()
+            segno.make(addr).terminal(buf, border=1)
+            msg = buf.getvalue() + f'INSUFFICIENT FUNDS PLEASE SEND {-balance} SAT TO {addr}'
+            progress_msg(msg)
         else:
             nonlocal total_fee, last_time
             total_fee += fee
@@ -103,12 +126,12 @@ async def stream_up(stream, filename, info):
                 rate = int(total_fee * 60 * 60 * 24 / (last_time - start_time) + 0.5) / 100_000_000
             else:
                 rate = '[no xfer yet]'
-            sys.stderr.write(tput['sc'])
-            sys.stderr.write(statline + f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]' + tput['rc'])
+            if tx is not None and not status:
+                status = tx.hash_hex
+            msg = f'[[ FEE: {total_fee} sat ({rate} coin/day) ]]'
             if status:
-                sys.stderr.write(statline2 + f'[[ {status} ]]')
-            sys.stderr.write(tput['rc'])
-        sys.stderr.flush()
+                msg += '\n' + f'[[ {status} ]]'
+            progress_msg(msg)
         #if balance >= fee and tx is not None:
         #    if not flush_lock.locked():
         #        await flush_lock.acquire()
@@ -116,12 +139,12 @@ async def stream_up(stream, filename, info):
 
     bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
 
-    print('flushing:', bcat.tx.hex_hash(), flush=True)
+    print('flushing:', bcat.tx.hash_hex, flush=True)
 
     downpipe = await blockchain.watch_headers()
     while True:
         header = await downpipe.get()
-        tx = await blockchain.tx(None, None, bcat.tx.hex_hash(), None, verbose = True)
+        tx = await blockchain.tx(None, None, bcat.tx.hash_hex, None, verbose = True)
         if 'blockheight' in tx:
             depth = header.height + 1 - tx['blockheight']
             print(f'flush {depth}: {header.hash_hex}', flush=True)
@@ -183,7 +206,7 @@ def main():
         else:
             teefile = None
         #logging.basicConfig(level = logging.WARN)
-        logging.basicConfig(level = logging.DEBUG)
+        #logging.basicConfig(level = logging.DEBUG)
         date = datetime.datetime.now().isoformat(timespec = 'seconds')
         if teefile is None:
             fn = date + '.cast'

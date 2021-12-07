@@ -97,6 +97,31 @@ class Header:
     def merkle_root_hex(self):
         return self.merkle_root[::-1].hex()
 
+#def send(privkey, unspents, min_fee, fee_per_kb, dest_addr, dest_sats, change_addr = None, forkid = False):
+#    privkey = PrivateKey(privkey)
+#    pubkey = privkey.pub
+#    scriptpubkey = pubkey.p2pkh
+#    if change_addr is None:
+#        change_addr = pubkey.addr
+#    elif not instanceof(change_addr, bitcoinx.Address):
+#        change_addr = bitcoinx.P2PKH_Address.from_string(change_addr)
+#    if not instanceof(dest_addr, bitcoinx.Address):
+#        dest_addr = bitcoinx.P2PKH_Address.from_string(dest_addr)
+#    inputs = []
+#    value = 0
+#    for unspent in unspents:
+#        value += unspent.amount
+#        inputs.append(bitcoinx.TxInput(bytes.fromhex(unspent.txid)[::-1], unspent.txindex, scriptpubkey, 0))
+#    dest_output = bitcoinx.TxOutput(dest_sats, dest_addr.to_script())
+#    fee_output = bitcoinx.TxOutput(value, change_addr.to_script())
+#    dest_output_idx = 0
+#    fee_output_idx = 1
+#    outputs = [None, None]
+#    outputs[dest_output_idx] = dest_output
+#    outputs[fee_output_idx] = fee_output
+#    tx = bitcoinx.Tx(1, inputs, outputs, 0)
+    
+
 def bumped_fee(privkey, tx, utxos, min_fee, fee_per_kb, change_addr):
     if type(privkey) is str:
         privkey = PrivateKey.from_hex(privkey)
@@ -108,14 +133,14 @@ def bumped_fee(privkey, tx, utxos, min_fee, fee_per_kb, change_addr):
     elif type(tx) is str:
         tx = Tx.from_hex(tx)
     else:
-        tx = Tx.from_bytes(tx.to_bytes())
+        tx = Tx.from_bytes(tx.bytes)
 
     if not instanceof(change_addr, bitcoinx.Address):
         change_addr = bitcoinx.P2PKH_Address.from_string(change_addr)
     change_script = change_addr.to_script()
     scriptpubkey = pubkey.p2pkh
 
-    fee = math.ceil(max(min_fee, fee_per_kb * len(tx.to_bytes()) / 1000))
+    fee = math.ceil(max(min_fee, fee_per_kb * len(tx.bytes) / 1000))
     available = sum((utxo.amount for utxo in utxos))
     replaced_fee = available - sum((output.value for output in tx.bitcoinx.outputs))
     diff = replaced_fee - fee
@@ -144,10 +169,7 @@ def bumped_fee(privkey, tx, utxos, min_fee, fee_per_kb, change_addr):
     return tx, fee, available - fee
 
 def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None, forkid = False):
-    if type(privkey) is str:
-        privkey = PrivateKey.from_hex(privkey)
-    elif type(privkey) is bytes:
-        privkey = PrivateKey.from_bytes(privkey)
+    privkey = PrivateKey(privkey)
     pubkey = privkey.pub
     if change_addr is None:
         change_addr = pubkey.addr
@@ -200,4 +222,4 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
             input.script_sig = bitcoinx.Script() << privkey.bitcoinx.sign(tx.signature_hash(idx, unspent.amount, scriptpubkey, sighash), None) + sighash.to_bytes(1, 'little') << pubkey.bitcoinx.to_bytes()
     #sig = privkey.sign(tx.to_bytes() + sighash.to_bytes(4, 'little'), bitcoinx.double_sha256)
 
-    return tx, params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0), fee, fee_output.value
+    return Tx(tx), params2utxo(amount = fee_output.value, txid = tx.hex_hash(), txindex = fee_output_idx, scriptpubkey = fee_output.script_pubkey, confirmations = 0), fee, fee_output.value

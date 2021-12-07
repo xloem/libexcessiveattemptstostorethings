@@ -296,7 +296,10 @@ class ElectrumClient:
             await self.init()
             return await self.request(type, message, *params)
         except aiorpcx.jsonrpc.RPCError as error:
-            self.logger.warn(error.message)
+            if 'too-long-mempool-chain' not in error.message:
+                self.logger.warn(error.message)
+            else:
+                self.logger.info(error.message)
             if error.code == aiorpcx.jsonrpc.JSONRPC.EXCESSIVE_RESOURCE_USAGE:
                 await asyncio.sleep(0.2)
                 return await self.request(type, message, *params)
