@@ -127,7 +127,7 @@ BCATPART.OVERHEAD_BYTES = len(
 
 #    def to_new_tx(self, privkey, unspents, min_fee, fee_per_kb, change_addr = None, forkid = True):
 
-async def default_progress(tx, fee, balance):
+async def default_progress(tx, fee, balance, status):
     pass
 
 async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, encoding = None, bcatinfo = '', bcatflag = '\0', buffer = True, forkid = True, progress = default_progress, min_fee = None, fee_per_kb = None, max_mempool_chain_length = 10000, block_seconds = 600, buffer_min_fee_txs = True, primary_min_fee = None, primary_fee_per_kb = None):
@@ -174,6 +174,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
     blockordata = util.Queues(blockqueue, dataqueue)
 
     txhashes = []
+    balance = 0 # for progress messages. be better to initialise this
     
     data = b''
     while True:
@@ -210,6 +211,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             expected_mempool_length = max_mempool_chain_length
         if expected_mempool_length < accumulated_mempool_length:
             blockchain.logger.debug('waiting for mempool to drain')
+            await progress(None, 0, balance, f'mempool filling. delaying to spread writes')
             continue
         to_flush = data[:max_BCATPART_datalen]
         data = data[len(to_flush):]
@@ -235,15 +237,16 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             txid = await blockchain.broadcast(tx_bytes)
             accumulated_mempool_length += 1
             last_tx = tx_bytes
-            await progress(tx, fee, balance)
+            await progress(tx, fee, balance, f'broadcast {txid}')
         except bitcoin.InsufficientFunds as insuf:
-            await progress(None, insuf.needed, insuf.balance - insuf.needed)
+            await progress(None, insuf.needed, insuf.balance - insuf.needed, f'insufficient funds.  waiting on deposit')
             data = data + to_flush
             to_flush = to_flush[:0]
             blockchain.logger.debug('checking balance again')
             utxos = await blockchain.addr_unspents(addr)
             continue
         except bitcoin.TooLongMempoolChain:
+            await progress(None, 0, balance, f'mempool full. waiting for next block')
             max_mempool_chain_length = len(await blockchain.addr_mempool(addr))
 
             data = data + to_flush
@@ -256,7 +259,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             # tx = tx.bytes
             # blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
             # txid = await blockchain.broadcast(tx)
-            # await progress(tx, fee, balance)
+            # await progress(tx, fee, balance, f'bump fee {txid}')
             continue
         unspent.txid = txid
         last_utxos = utxos
@@ -272,10 +275,10 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                 blockchain.logger.debug('try flush')
                 tx, unspent, fee, balance = OBJ.to_new_tx(privkey, utxos, min_fee, fee_per_kb, forkid = forkid)
                 txid = await blockchain.broadcast(tx.bytes)
-                await progress(tx, fee, balance)
+                await progress(tx, fee, balance, f'flush {txid}')
                 break
             except bitcoin.InsufficientFunds as insuf:
-                await progress(None, insuf.needed, insuf.balance - insuf.needed)
+                await progress(None, insuf.needed, insuf.balance - insuf.needed, 'insufficient funds. waiting for deposit')
                 time.sleep(1)
                 utxos = await blockchain.addr_unspents(addr)
                 continue
@@ -285,6 +288,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
                     fee_per_kb = primary_fee_per_kb
                 else:
                     blockchain.logger.warn(f'Waiting for mempool to clear, size = {len(await blockchain.addr_mempool(addr))}')
+                    await progress(None, 0, balance, 'mempool full, waiting for block')
                     await blockqueue.get()
                 continue
         blockchain.logger.debug('flushed')

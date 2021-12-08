@@ -5,7 +5,7 @@ import aiorpcx, ssl, bit
 from .bitcoin import Header, TooLongMempoolChain, InsufficientFee
 
 class ElectrumClient:
-    def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 450, max_transaction_size = 1_000_000_000):
+    def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 900 / 4, max_transaction_size = 1_000_000_000):
         if ' ' in peer and coin is not None:
             host = peer.split(' ')[0]
             kind = peer.split(' ')[-1]

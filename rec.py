@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from contextlib import contextmanager
 
 from bulletprooftoilet import electrum_client_2, bitcoin, bitcom
@@ -56,6 +57,11 @@ logger.addHandler(logging_handler_err)
 
 ## ##
 
+def err(error):
+    for line in traceback.format_exception(type(error), error, error.__traceback__):
+        logger.error(line)
+    raise error
+
 def produce_data(fifo):
     sys.argv[1:1] = ['rec']
     sys.argv.append(fifo)
@@ -63,6 +69,8 @@ def produce_data(fifo):
         asciinema()
     except SystemExit:
         pass
+    except Exception as error:
+        err(error)
 
 async def stream_up(stream, filename, info):
     # note: this private key is not private
@@ -137,7 +145,10 @@ async def stream_up(stream, filename, info):
         #        await flush_lock.acquire()
     #await flush_lock.acquire()
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
+    try:
+        bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
+    except Exception as error:
+        err(error)
 
     print('flushing:', bcat.tx.hash_hex, flush=True)
 
@@ -175,21 +186,24 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
         tee = Tee()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
         last_time = time.time()
-        with zstd.stream_writer(tee) as zstdsink:
-            while True:
-                new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
-                if len(new_data) > 0:
-                    zstdsink.write(new_data)
-                    now = time.time()
-                    if now - last_time >= xfer_seconds:
-                    #if flush_lock.locked():
-                    #    flush_lock.release()
-                        zstdsink.flush()
-                        last_time = now
-                elif eof_event.is_set():
-                    break
-                else:
-                    time.sleep(0.2)
+        try:
+            with zstd.stream_writer(tee) as zstdsink:
+                while True:
+                    new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
+                    if len(new_data) > 0:
+                        zstdsink.write(new_data)
+                        now = time.time()
+                        if now - last_time >= xfer_seconds:
+                        #if flush_lock.locked():
+                        #    flush_lock.release()
+                            zstdsink.flush()
+                            last_time = now
+                    elif eof_event.is_set():
+                        break
+                    else:
+                        time.sleep(0.2)
+        except Exception as error:
+            err(error)
 
 def send_data(in_fifo, filename):
     with open(in_fifo, 'r') as compressed_stream:
