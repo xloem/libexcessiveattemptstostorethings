@@ -36,6 +36,11 @@ class InsufficientFee(OverflowError):
         self.message = message
         super().__init__(message)
 
+class MempoolConflict(OverflowError):
+    def __init__(self, message = None):
+        self.message = message
+        super().__init__(message)
+
 async def input2utxo(input, blockchain):
     txid = input.prev_hash
     txpos = input.prev_idx

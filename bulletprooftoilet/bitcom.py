@@ -209,7 +209,7 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             blockchain.logger.debug(f'expected_mempool_length after {int(current_time - last_block_time)}s * {max_mempool_chain_length} / {block_seconds}s / 1.5 = {int(expected_mempool_length)}; accumulated = {accumulated_mempool_length}')
         else:
             expected_mempool_length = max_mempool_chain_length
-        if expected_mempool_length < accumulated_mempool_length:
+        if expected_mempool_length < accumulated_mempool_length and stream_open:
             blockchain.logger.debug('waiting for mempool to drain')
             await progress(None, 0, balance, f'mempool filling. delaying to spread writes')
             continue
@@ -240,26 +240,42 @@ async def stream_up(filename, fileobj, privkey, blockchain, media_type = None, e
             await progress(tx, fee, balance, f'broadcast {txid}')
         except bitcoin.InsufficientFunds as insuf:
             await progress(None, insuf.needed, insuf.balance - insuf.needed, f'insufficient funds.  waiting on deposit')
-            data = data + to_flush
+            data = to_flush + data
             to_flush = to_flush[:0]
             blockchain.logger.debug('checking balance again')
             utxos = await blockchain.addr_unspents(addr)
             continue
+        except bitcoin.InsufficientFee:
+            if min_fee < primary_min_fee or fee_per_kb < primary_fee_per_kb:
+                await progress(None, 0, balance, f'provided fee not sufficient, using primary fee')
+                min_fee = primary_min_fee
+                fee_per_kb = primary_fee_per_kb
+                data = to_flush + data
+                to_flush = to_flush[:0]
+                continue
+            raise
         except bitcoin.TooLongMempoolChain:
             await progress(None, 0, balance, f'mempool full. waiting for next block')
             max_mempool_chain_length = len(await blockchain.addr_mempool(addr))
 
-            data = data + to_flush
+            data = to_flush + data
             to_flush = to_flush[:0]
             blockchain.logger.debug('node mempool length reached')
-            #min_fee = primary_min_fee
-            #fee_per_kb = primary_fee_per_kb
+            min_fee = primary_min_fee
+            fee_per_kb = primary_fee_per_kb
+
 
             # tx, fee, balance = bitcoin.bumped_fee(privkey, tx, last_utxos, primary_min_fee, primary_fee_per_kb, privkey.pub.addr_str)
             # tx = tx.bytes
             # blockchain.logger.debug(f'broadcasting tx with fee of {fee} and size of {len(tx)}; {fee_per_kb}*{len(tx)/1000}={fee_per_kb*len(tx)//1000} overhead={len(tx)-len(to_flush)}')
             # txid = await blockchain.broadcast(tx)
             # await progress(tx, fee, balance, f'bump fee {txid}')
+            continue
+        except bitcoin.MempoolConflict:
+            await progress(None, 0, balance, f'double spend encountered, recollecting utxos, private key must be doubly used, data might be lost')
+            utxos = await blockchain.addr_unspents(addr)
+            data = to_flush + data
+            to_flush = to_flush[:0]
             continue
         unspent.txid = txid
         last_utxos = utxos

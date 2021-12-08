@@ -2,7 +2,7 @@ import asyncio, logging, time
 
 import aiorpcx, ssl, bit
 
-from .bitcoin import Header, TooLongMempoolChain, InsufficientFee
+from .bitcoin import Header, TooLongMempoolChain, InsufficientFee, MempoolConflict
 
 class ElectrumClient:
     def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 900 / 4, max_transaction_size = 1_000_000_000):
@@ -154,6 +154,12 @@ class ElectrumClient:
                     raise TooLongMempoolChain()
                 elif '66: mempool min fee not met' in error.message:
                     raise InsufficientFee(error.message)
+                elif 'txn-mempool-conflict' in error.message:
+                    self.logger.error(f'{txid} IS A DOUBLE SPEND')
+                    raise MempoolConflict()
+                elif 'Transaction already in the mempool' in error.message:
+                    txid = Tx.from_bytes(txbytes).hash_hex
+                    self.logger.error(f'{txid} SENT TO MEMPOOL ALREADY CONTAINING IT')
             raise
         return txid
 
@@ -281,21 +287,30 @@ class ElectrumClient:
                 await asyncio.sleep(self.keepalive_seconds - seconds_since_last_message)
 
     async def request(self, type, message, *params):
+        if not hasattr(self, 'pending_request_count'):
+            self.pending_request_count = 0
         try:
+            self.pending_request_count += 1
             async with aiorpcx.timeout_after(10):
                 self.logger.debug(f'-> {message} {params}')
                 result = await self.session.send_request(message, params)
+                self.pending_request_count -= 1
                 self.logger.debug(f'<- {result}')   
                 if not isinstance(result, type):
                     raise Exception(f'{message} return bad result type {type(result).__name__}')
                 self.last_message_received_at = time.time()
                 return result
         except aiorpcx.TaskTimeout:
+            self.pending_request_count -= 1
             self.logger.warn('timeout, reconnecting')
             await self.delete()
+            if self.pending_request_count != 0:
+                # all requests should be restarted here.  could use a taskgroup
+                raise ExceptioN(f'Timeout restarted client but {self.pending_request_count} requests were pending, use taskgroup?')
             await self.init()
             return await self.request(type, message, *params)
         except aiorpcx.jsonrpc.RPCError as error:
+            self.pending_request_count -= 1
             if 'too-long-mempool-chain' not in error.message:
                 self.logger.warn(error.message)
             else:
