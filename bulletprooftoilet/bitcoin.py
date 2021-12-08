@@ -41,6 +41,13 @@ class MempoolConflict(OverflowError):
         self.message = message
         super().__init__(message)
 
+async def input2outputscript(input, blockchain):
+    txid = input.prev_hash
+    txpos = input.prev_idx
+    tx = await blockchain.tx(None, None, txid[::-1].hex(), None)
+    tx = Tx(tx)
+    return tx.outputs[txpos].script_pubkey.to_bytes()
+
 async def input2utxo(input, blockchain):
     txid = input.prev_hash
     txpos = input.prev_idx

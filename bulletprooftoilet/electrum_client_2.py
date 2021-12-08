@@ -3,6 +3,7 @@ import asyncio, logging, time
 import aiorpcx, ssl, bit
 
 from .bitcoin import Header, TooLongMempoolChain, InsufficientFee, MempoolConflict
+from . import util
 
 class ElectrumClient:
     def __init__(self, peer = 'localhost:50001:t', coin = None, keepalive_seconds = 900 / 4, max_transaction_size = 1_000_000_000):
@@ -214,7 +215,9 @@ class ElectrumClient:
         return await self.request(list, 'blockchain.scripthash.get_balance', scripthash)
 
     async def addr_mempool(self, addr):
-        script = self.addr_to_p2pkh(addr)
+        return await self.script_mempool(self.addr_to_p2pkh(addr))
+
+    async def script_mempool(self, script : bytes):
         scripthash = self.script_to_scripthash(script)
         # presently a list of dicts containing 'tx_hash' and 'height'
         return await self.request(list, 'blockchain.scripthash.get_mempool', scripthash)
@@ -320,3 +323,59 @@ class ElectrumClient:
                 return await self.request(type, message, *params)
             else:
                 raise
+
+class LoadBalanced(ElectrumClient):
+    def __init__(self, peers, *params, **kwparams):
+        self.pending_peers = peers
+        self.params = params
+        self.kwparams = kwparams
+        self.peers = {}
+        for peer in peers:
+            try:
+                self.peers[peer] = ElectrumClient(peer, *params, **kwparams)
+            except Exception as last_exception:
+                continue
+        if len(self.peers) == 0:
+            raise last_exception
+    async def init(self):
+        self.failed_peers = {}
+        while len(self.pending_peers):
+            addr = self.pending_peers.pop()
+            if addr in self.peers:
+                continue
+            try:
+                peer = ElectrumClient(addr, *self.params, *self.kwparams)
+                await peer.init()
+            except Exception as exception:
+                self.failed_peers[addr] = exception
+                continue
+            self.pending_peers.extend(await peer.peers())
+
+            keep = True
+            host = addr.split(' ',1)[0].split(':',1)[0]
+            for char in host:
+                if not host.isnumeric():
+                    keep = False
+                    break
+            if not keep:
+                await peer.delete()
+            else:
+                self.peers[addr] = peer
+        if not len(self.peers):
+            for exception in self.failed_peers.values():
+                raise exception
+    async def delete(self):
+        connected = self.peers
+        self.peers = {}
+        for addr, peer in connected.items():
+            try:
+                self.pending_peers.extend(await peer.peers())
+            except Exception as exception:
+                pass
+            await peer.delete()
+    async def request(self, *params, **kwparams):
+        addr, peer = util.dict_shift(self.peers)
+        try:
+            return await self.request(*params, **kwparams)
+        finally:
+            self.peers[addr] = peer

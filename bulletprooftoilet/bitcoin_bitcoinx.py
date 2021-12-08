@@ -10,9 +10,9 @@ def Compose(cls):
 class Tx(Compose(bitcoinx.Tx)):
     def __init__(self, src):
         if type(src) is bytes:
-            src = bitcoinx.Tx(bytes)
+            src = bitcoinx.Tx(src)
         elif type(src) is str:
-            src = bitcoinx.Tx.from_hex(hex)
+            src = bitcoinx.Tx.from_hex(src)
         elif type(src) is Tx:
             src = src.bitcoinx
         super().__init__(src)
@@ -51,9 +51,9 @@ class Output(Compose(bitcoinx.TxOutput)):
 class PrivateKey(Compose(bitcoinx.PrivateKey)):
     def __init__(self, src = None):
         if type(src) is str:
-            src = bitcoinx.PrivateKey.from_hex(hex)
+            src = bitcoinx.PrivateKey.from_hex(src)
         elif type(src) is bytes:
-            src = bitcoinx.PrivateKey(bytes)
+            src = bitcoinx.PrivateKey(src)
         elif src is None:
             src = bitcoinx.PrivateKey.from_random()
         elif type(src) is PrivateKey:

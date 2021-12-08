@@ -16,6 +16,12 @@ class Queues:
             del self.tasks[queue]
         return results
 
+def dict_shiftitem(dict):
+    for key in dict:
+        val = dict.pop(key)
+        break
+    return (key, val)
+
 def as_async(func):
     if not asyncio.iscoroutinefunction(func):
         async def asyncfunc(*params, **kwparams):

@@ -78,8 +78,8 @@ async def stream_up(stream, filename, info):
 
     coin = coins.BitcoinSV
     fee_per_kb = 250
-    mempool_depth = 25
-    block_seconds = 600
+    mempool_depth = 2 #25
+    block_seconds = 600 #1200 #600
 
     peer = 'sv.usebsv.com s'
     while True:
