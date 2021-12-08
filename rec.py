@@ -39,6 +39,9 @@ def temp_fifo(name = 'fifo'):
     finally:
         os.rmdir(tmpdir)  # Remove directory
 
+def err2str(error):
+    return ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+
 ## dual-stream logging config from stackoverflow
 
 #Get the root logger
@@ -63,6 +66,8 @@ def produce_data(fifo):
         asciinema()
     except SystemExit:
         pass
+    except Exception as e:
+        logging.getLogger().error(err2str(e))
 
 async def stream_up(stream, filename, info):
     # note: this private key is not private
@@ -137,23 +142,26 @@ async def stream_up(stream, filename, info):
         #        await flush_lock.acquire()
     #await flush_lock.acquire()
 
-    bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
+    try:
+        bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
 
-    print('flushing:', bcat.tx.hash_hex, flush=True)
+        print('flushing:', bcat.tx.hash_hex, flush=True)
 
-    downpipe = await blockchain.watch_headers()
-    while True:
-        header = await downpipe.get()
-        tx = await blockchain.tx(None, None, bcat.tx.hash_hex, None, verbose = True)
-        if 'blockheight' in tx:
-            depth = header.height + 1 - tx['blockheight']
-            print(f'flush {depth}: {header.hash_hex}', flush=True)
-            if depth >= 6:
-                break
-        else:
-            print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
+        downpipe = await blockchain.watch_headers()
+        while True:
+            header = await downpipe.get()
+            tx = await blockchain.tx(None, None, bcat.tx.hash_hex, None, verbose = True)
+            if 'blockheight' in tx:
+                depth = header.height + 1 - tx['blockheight']
+                print(f'flush {depth}: {header.hash_hex}', flush=True)
+                if depth >= 6:
+                    break
+            else:
+                print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
 
-    await blockchain.delete()
+        await blockchain.delete()
+    except Exception as e:
+        logging.getLogger().error(err2str(e))
 
 #flush_lock = asyncio.Lock()
 xfer_seconds = 600
@@ -175,21 +183,24 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
         tee = Tee()
         zstd = zstandard.ZstdCompressor(compression_params = compression_params)
         last_time = time.time()
-        with zstd.stream_writer(tee) as zstdsink:
-            while True:
-                new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
-                if len(new_data) > 0:
-                    zstdsink.write(new_data)
-                    now = time.time()
-                    if now - last_time >= xfer_seconds:
-                    #if flush_lock.locked():
-                    #    flush_lock.release()
-                        zstdsink.flush()
-                        last_time = now
-                elif eof_event.is_set():
-                    break
-                else:
-                    time.sleep(0.2)
+        try:
+            with zstd.stream_writer(tee) as zstdsink:
+                while True:
+                    new_data = uncompressed_stream.read1(1024 * 1024 * 1024)
+                    if len(new_data) > 0:
+                        zstdsink.write(new_data)
+                        now = time.time()
+                        if now - last_time >= xfer_seconds:
+                        #if flush_lock.locked():
+                        #    flush_lock.release()
+                            zstdsink.flush()
+                            last_time = now
+                    elif eof_event.is_set():
+                        break
+                    else:
+                        time.sleep(0.2)
+        except Exception as e:
+            logging.getLogger().error(err2str(e))
 
 def send_data(in_fifo, filename):
     with open(in_fifo, 'r') as compressed_stream:
