@@ -24,7 +24,7 @@ async def main():
 
 
     print('\n=> Provide waste on stdin to flush it down the cryptographic toilet in a corrupt, broken manner <=\n')
-    bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False, fee_per_kb = 250, buffer_min_fee_txs = False)
+    bcat, unspent = await bitcom.stream_up('test.txt', sys.stdin, privkey, blockchain, bcatinfo = 'testing', buffer = False, buffer_min_fee_txs = False, fee_per_kb = 250, primary_fee_per_kb = (await blockchain.fee_per_kb(1000)))
 
     await blockchain.delete()
 

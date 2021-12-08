@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from contextlib import contextmanager
 
 from bulletprooftoilet import electrum_client_2, bitcoin, bitcom
@@ -39,9 +40,6 @@ def temp_fifo(name = 'fifo'):
     finally:
         os.rmdir(tmpdir)  # Remove directory
 
-def err2str(error):
-    return ''.join(traceback.format_exception(type(error), error, error.__traceback__))
-
 ## dual-stream logging config from stackoverflow
 
 #Get the root logger
@@ -59,6 +57,11 @@ logger.addHandler(logging_handler_err)
 
 ## ##
 
+def err(error):
+    for line in traceback.format_exception(type(error), error, error.__traceback__):
+        logger.error(line)
+    raise error
+
 def produce_data(fifo):
     sys.argv[1:1] = ['rec']
     sys.argv.append(fifo)
@@ -66,8 +69,8 @@ def produce_data(fifo):
         asciinema()
     except SystemExit:
         pass
-    except Exception as e:
-        logging.getLogger().error(err2str(e))
+    except Exception as error:
+        err(error)
 
 async def stream_up(stream, filename, info):
     # note: this private key is not private
@@ -161,7 +164,7 @@ async def stream_up(stream, filename, info):
 
         await blockchain.delete()
     except Exception as e:
-        logging.getLogger().error(err2str(e))
+        err(error)
 
 #flush_lock = asyncio.Lock()
 xfer_seconds = 600
@@ -199,8 +202,8 @@ def compress_data(in_fifo, out_fifo, eof_event, tee_file = None):
                         break
                     else:
                         time.sleep(0.2)
-        except Exception as e:
-            logging.getLogger().error(err2str(e))
+        except Exception as error:
+            err(error)
 
 def send_data(in_fifo, filename):
     with open(in_fifo, 'r') as compressed_stream:
