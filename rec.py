@@ -163,7 +163,7 @@ async def stream_up(stream, filename, info):
                 print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
 
         await blockchain.delete()
-    except Exception as e:
+    except Exception as error:
         err(error)
 
 #flush_lock = asyncio.Lock()
