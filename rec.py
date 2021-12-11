@@ -147,24 +147,24 @@ async def stream_up(stream, filename, info):
 
     try:
         bcat, unspent = await bitcom.stream_up(filename, stream, privkey, blockchain, bcatinfo = info, buffer = False, progress = progress, fee_per_kb = fee_per_kb, primary_fee_per_kb = primary_fee_per_kb, max_mempool_chain_length = mempool_depth)
+
+        print('flushing:', bcat.tx.hash_hex, flush=True)
+
+        downpipe = await blockchain.watch_headers()
+        while True:
+            header = await downpipe.get()
+            tx = await blockchain.tx(None, None, bcat.tx.hash_hex, None, verbose = True)
+            if 'blockheight' in tx:
+                depth = header.height + 1 - tx['blockheight']
+                print(f'flush {depth}: {header.hash_hex}', flush=True)
+                if depth >= 6:
+                    break
+            else:
+                print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
+
+        await blockchain.delete()
     except Exception as error:
         err(error)
-
-    print('flushing:', bcat.tx.hash_hex, flush=True)
-
-    downpipe = await blockchain.watch_headers()
-    while True:
-        header = await downpipe.get()
-        tx = await blockchain.tx(None, None, bcat.tx.hash_hex, None, verbose = True)
-        if 'blockheight' in tx:
-            depth = header.height + 1 - tx['blockheight']
-            print(f'flush {depth}: {header.hash_hex}', flush=True)
-            if depth >= 6:
-                break
-        else:
-            print(f'{header.hash_hex} did not resolve clog, waiting ..', flush=True)
-
-    await blockchain.delete()
 
 #flush_lock = asyncio.Lock()
 xfer_seconds = 600
