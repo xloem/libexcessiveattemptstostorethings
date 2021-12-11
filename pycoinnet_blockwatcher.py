@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-import binascii
+import asyncio, binascii
 
 """
 Custom bitcoin client
 """
 BSV_MAINNET = dict(
-    MAGIC_HEADER=binascii.unhexlify('F9BEB4D9'),
+    MAGIC_HEADER=binascii.unhexlify('E3E1F3E8'),
     DNS_BOOTSTRAP=[
         # Bitcoin SV seeder
         "seed.bitcoinsv.io",
@@ -16,7 +16,7 @@ BSV_MAINNET = dict(
     ],
     DEFAULT_PORT=8333,
     SEEDS=[
-        '.'.join((str(ipnum) for ipnum in ipnums[-4:])) + ':' + str(port)
+        ('.'.join((str(ipnum) for ipnum in ipnums[-4:])), port)
         for ipnums, port in 
     [
         [[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0x05,0x09,0x1c,0x0a], 8333],
@@ -942,6 +942,12 @@ BSV_MAINNET = dict(
         [[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xde,0xef,0xc1,0x79], 8333]
     ]]
 )
+BSV_REGTEST = dict(
+    MAGIC_HEADER=binascii.unhexlify('DAB5BFFA'),
+    DNS_BOOTSTRAP=[],
+    DEFAULT_PORT=18444,
+    SEEDS=['127.0.0.1:18444'],
+)
 
 import argparse
 import asyncio
@@ -987,6 +993,7 @@ def get_last_processed_block(state_dir):
     return last_processed_block
 
 
+@asyncio.coroutine
 def block_processor(change_q, blockfetcher, state_dir, blockdir, depth):
     last_processed_block = get_last_processed_block(state_dir)
     block_q = asyncio.Queue()
@@ -1098,7 +1105,8 @@ def main():
         host_port_q = dns_bootstrap_host_port_q(network)
     else:
         host_port_q = asyncio.Queue()
-        host_port_q.put_nowait(("127.0.0.1", 8333))
+        host_port_q.put_nowait(("127.0.0.1", network['DEFAULT_PORT']))
+        host_port_q.put_nowait(network['SEEDS'][1])
 
     def should_download_block_f(block_hash, block_index):
         return block_index >= args.fast_forward

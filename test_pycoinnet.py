@@ -1,7 +1,7 @@
-import binascii
+import asyncio, binascii
 
 BSV_MAINNET = dict(
-    MAGIC_HEADER=binascii.unhexlify('F9BEB4D9'),
+    MAGIC_HEADER=binascii.unhexlify('E3E1F3E8'),
     DNS_BOOTSTRAP=[
         # Bitcoin SV seeder
         "seed.bitcoinsv.io",
@@ -12,7 +12,7 @@ BSV_MAINNET = dict(
     ],
     DEFAULT_PORT=8333,
     SEEDS=[
-        '.'.join((str(ipnum) for ipnum in ipnums[-4:])) + ':' + str(port)
+        ('.'.join((str(ipnum) for ipnum in ipnums[-4:])), port)
         for ipnums, port in 
     [
         [[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0x05,0x09,0x1c,0x0a], 8333],
@@ -937,6 +937,12 @@ BSV_MAINNET = dict(
         [[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xd9,0xb6,0xc7,0x15], 8333],
         [[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xde,0xef,0xc1,0x79], 8333]
     ]]
+)
+BSV_REGTEST = dict(
+    MAGIC_HEADER=binascii.unhexlify('DAB5BFFA'),
+    DNS_BOOTSTRAP=[],
+    DEFAULT_PORT=18444,
+    SEEDS=['127.0.0.1:18444'],
 )
 
 
