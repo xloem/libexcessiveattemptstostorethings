@@ -159,7 +159,7 @@ class ElectrumClient:
                     self.logger.error(f'{txid} IS A DOUBLE SPEND')
                     raise MempoolConflict()
                 elif 'Transaction already in the mempool' in error.message:
-                    txid = Tx.from_bytes(txbytes).hash_hex
+                    txid = bitcoin.Tx.from_bytes(txbytes).hash_hex
                     self.logger.error(f'{txid} SENT TO MEMPOOL ALREADY CONTAINING IT')
             raise
         return txid
