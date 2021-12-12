@@ -309,7 +309,7 @@ class ElectrumClient:
             await self.delete()
             if self.pending_request_count != 0:
                 # all requests should be restarted here.  could use a taskgroup
-                raise ExceptioN(f'Timeout restarted client but {self.pending_request_count} requests were pending, use taskgroup?')
+                raise Exception(f'Timeout restarted client but {self.pending_request_count} requests were pending, use taskgroup?')
             await self.init()
             return await self.request(type, message, *params)
         except aiorpcx.jsonrpc.RPCError as error:
