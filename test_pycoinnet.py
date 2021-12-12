@@ -266,7 +266,7 @@ from pycoinnet.util.BlockChainStore import BlockChainStore
 
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
-def main():
+async def main():
     #asyncio.tasks._DEBUG = True
     #logging.basicConfig(level=logging.DEBUG)
     #logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -284,8 +284,6 @@ def main():
             print('do_update !')
         #op_queue.put_nowait((blockchain, ops))
 
-    #os.makedirs('pycoinnet-state', exist_ok=True)
-
     import numpy as np
     class InMemoryBlockChainStore(pycoinnet.util.BlockChainStore.BlockChainStore):
         def __init__(self, hashbits = 256):
@@ -302,14 +300,13 @@ def main():
         def __setitem__(self, idx, hashbytes):
             self._blocks[idx] = np.frombuffer(hashbytes, dtype=np.byte)
         def block_tuple_iterator(self):
-            #import pdb; pdb.set_trace()
             last_hash = self.parent_to_0
             for idx in range(self.height):
                 hash = self[idx]
                 yield (hash, last_hash, 1)
         def did_lock_to_index(self, block_tuple_list, start_index):
-            #import pdb; pdb.set_trace()
             end_index = start_index + len(block_tuple_list)
+            print('lock to index:', end_index)
             if self._blocks.shape[0] < end_index:
                 try:
                     self._blocks.resize((end_index, self.hashbytect))
@@ -327,6 +324,7 @@ def main():
                 self[idx + start_index] = hash
                 last_hash = hash
             
+    #os.makedirs('pycoinnet-state', exist_ok=True)
     #block_chain_store = pycoinnet.util.BlockChainStore.BlockChainStore('pycoinnet-state')
     block_chain_store = InMemoryBlockChainStore()
 
@@ -337,8 +335,6 @@ def main():
     host_port_q.put_nowait(network['SEEDS'][1])
     
     client = pycoinnet.examples.Client.Client(network, host_port_q, should_download_block_f, block_chain_store, do_update)
-    #task = asyncio.Task(op_queue.get())
-    asyncio.get_event_loop().run_forever()
-    #asyncio.run(asyncio.sleep(10))
+    await asyncio.sleep(60)
 
-main()
+asyncio.run(main())
