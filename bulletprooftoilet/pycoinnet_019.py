@@ -5,10 +5,8 @@ from pycoinnet.examples.Client import Client
 from pycoinnet.util.BlockChainStore import BlockChainStore
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
-import numpy as np # for InMemoryBlockChainStore
-
-class BitcoinSV:
-    netmagic = binascii.unhexlify('E3E1F3E8')
+BitcoinSV = dict(
+    netmagic = binascii.unhexlify('E3E1F3E8'),
     dns_bootstrap_hosts = [
         # Bitcoin SV seeder
         "seed.bitcoinsv.io",
@@ -16,9 +14,9 @@ class BitcoinSV:
         "seed.cascharia.com",
         # satoshisvision.network
         "seed.satoshisvision.network",
-    ]
-    default_port = 8333
-    seeds = [
+    ],
+    default_port = 8333,
+    seed_host_port_pairs = [
         ('.'.join((str(ipnum) for ipnum in ipnums[-4:])), port)
         for ipnums, port in 
     [
@@ -254,6 +252,7 @@ class BitcoinSV:
         [[0xd5,0x71,0xc1,0x21], 8333], [[0xd8,0xda,0xeb,0x5d], 8333], [[0xd9,0x17,0x07,0x60], 8333], [[0xd9,0xb6,0xc7,0x15], 8333],
         [[0xde,0xef,0xc1,0x79], 8333]
     ]]
+)
 
 class PycoinnetClient:
     def __init__(self, netmagic, dns_bootstrap_hosts = [], seed_host_port_pairs = [], default_port = 8333):
@@ -304,52 +303,90 @@ class PycoinnetClient:
         else:
             print('do_update !')
 
+try:
+    import numpy as np # for InMemoryBlockChainStore
+    class BufVec:
+        def __init__(self, width):
+            self.width = width
+            self.ndarray = np.zeros((0, width), dtype=np.byte)
+        def height(self):
+            return self.ndarray.shape[0]
+        def ensure(self, height):
+            before = self.height()
+            if before < height:
+                try:
+                    self.ndarray.resize((height, self.width))
+                except:
+                    self.ndarray = np.resize(self.ndarray, (height, self.width))
+                    self.ndarray[before:,:] = 0
+        def get(self, idx):
+            return self.ndarray[idx].tobytes()
+        def set(self, idx, bytes):
+            self.ndarray[idx] = np.frombuffer(bytes, dtype=np.byte)
+        def clear(self, idx):
+            self.ndarray[idx] = 0
+        def is_set(self, idx):
+            return not (self.ndarray[idx] == 0).all()
+except ModuleNotFoundError:
+    class BufVec:
+        def __init__(self, width):
+            self.width = width
+            self.bytes = b''
+        def height(self):
+            return len(self.bytes) // self.width
+        def ensure(self, height):
+            before = self.height()
+            if before < height:
+                self.bytes += b'\0' * self.width * (height - before)
+        def get(self, idx):
+            offset = index * self.width
+            return self.bytes[offset:offset + self.width]
+        def set(self, idx, bytes):
+            offset = index * self.width
+            self.bytes[offset:offset + self.width] = bytes
+        def clear(self, idx):
+            self.bytes[offset:offset + self.width] = b'\0' * self.width
+        def is_set(self, idx):
+            return self.bytes[offset:offset + self.width] != b'\0' * self.width
+
 class InMemoryBlockChainStore(pycoinnet.util.BlockChainStore.BlockChainStore):
     def __init__(self, hashbits = 256, headerbytes = 80):
-        self._blockhashes = np.zeros((0, hashbits // 8), dtype=np.byte)
-        self._blockheaders = np.zeros((0, headerbytes), dtype=np.byte)
+        self._blockhashes = BufVec(hashbits // 8)
+        self._blockheaders = BufVec(headerbytes)
         self.parent_to_0 = b'\0' * 32
     @property
     def hashbytect(self):
-        return self._blockhashes.shape[1]
+        return self._blockhashes.width
     @property
     def headerbytes(self):
-        return self._blockheaders.shape[1]
+        return self._blockheaders.width
     @property
     def height(self):
-        return self._blockhashes.shape[0]
+        return self._blockhashes.height()
     def gethash(self, idx):
-        return self._blockhashes[idx].tobytes()
+        return self._blockhashe.get(idx)
     def sethash(self, idx, hashbytes):
-        hashvec = np.frombuffer(hashbytes, dtype=np.byte)
-        if not (self._blockhashes[idx] == hashvec).all():
-            assert not self._blockhashes[idx].any() or hashbytes == self.parent_to_0
-            self._blockhashes[idx] = np.frombuffer(hashbytes, dtype=np.byte)
+        if self._blockhashes[idx] != hashbytes:
+            assert not self._blockhashes.is_set(idx) or hashbytes == self.parent_to_0
+            self._blockhashes.set(idx, hashbytes)
     def getheader(self, idx):
-        bytes = self._blockheaders[idx].tobytes()
+        bytes = self._blockheaders.get(idx)
         s = io.BytesIO(bytes)
         return pycoin.block.BlockHeader.parse(s)
     def ensure_capacity(self, end_index):
-        if self._blockhashes.shape[0] < end_index:
-            try:
-                self._blockhashes.resize((end_index, self.hashbytect))
-                self._blockheaders.resize((end_index, self.headerbytes))
-            except:
-                newstart = self.height
-                self._blockhashes = np.resize(self._blockhashes, (end_index, self.hashbytect))
-                self._blockhashes[newstart:,:] = 0
-                self._blockheaders = np.resize(self._blockheaders, (end_index, self.headerbytes))
-                self._blockheaders[newstart:,:] = 0
+        if self.height < end_index:
+            self._blockhashes.ensure(end_index)
+            self._blockheaders.ensure(end_index)
     def setheader(self, idx, bytes):
         if isinstance(bytes, pycoin.block.BlockHeader):
             s = io.BytesIO()
             bytes.stream_header(s)
             bytes = s.getvalue()
-        self._blockheaders[idx] = np.frombuffer(bytes, dtype=np.byte)
+        self._blockheaders.set(idx, bytes)
         self.sethash(idx, pycoin.encoding.double_sha256(bytes))
     def remove(self, idx):
-        self.sethash(idx, self.parent_to_0)
-        self._blockheaders[idx] = 0
+        self._blockhashes.clear(idx)
+        self._blockheaders.clear(idx)
     def block_tuple_iterator(self):
         last_hash = self.parent_to_0
         for idx in range(self.height):
@@ -360,7 +397,7 @@ class InMemoryBlockChainStore(pycoinnet.util.BlockChainStore.BlockChainStore):
         print('lock to index:', end_index)
         self.ensure_capacity(end_index)
         if start_index > 0:
-            last_hash = self[start_index - 1]
+            last_hash = self.gethash(start_index - 1)
         else:
             last_hash = self.parent_to_0
         for idx, (hash, parent_hash, weight) in enumerate(block_tuple_list):
