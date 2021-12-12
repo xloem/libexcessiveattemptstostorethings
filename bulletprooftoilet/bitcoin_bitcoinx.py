@@ -27,7 +27,7 @@ class Tx(Compose(bitcoinx.Tx)):
         return self.bitcoinx.hex_hash()
     @staticmethod
     def from_bytes(bytes):
-        return Tx(bitcoinx.Tx(bytes))
+        return Tx(bitcoinx.Tx.from_bytes(bytes))
     @staticmethod
     def from_hex(hex):
         return Tx(bitcoinx.Tx.from_hex(hex))
