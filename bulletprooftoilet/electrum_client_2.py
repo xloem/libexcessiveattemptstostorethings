@@ -2,7 +2,7 @@ import asyncio, logging, time
 
 import aiorpcx, ssl, bit
 
-from .bitcoin import Header, TooLongMempoolChain, InsufficientFee, MempoolConflict
+from .bitcoin import Header, Tx, TooLongMempoolChain, InsufficientFee, MempoolConflict
 from . import util
 
 class ElectrumClient:
@@ -159,7 +159,7 @@ class ElectrumClient:
                     self.logger.error(f'{txid} IS A DOUBLE SPEND')
                     raise MempoolConflict()
                 elif 'Transaction already in the mempool' in error.message:
-                    txid = bitcoin.Tx.from_bytes(txbytes).hash_hex
+                    txid = Tx.from_bytes(txbytes).hash_hex
                     self.logger.error(f'{txid} SENT TO MEMPOOL ALREADY CONTAINING IT')
             raise
         return txid
