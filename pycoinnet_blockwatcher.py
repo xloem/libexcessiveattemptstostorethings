@@ -1100,13 +1100,15 @@ def main():
     state_dir = args.state_dir
     block_chain_store = BlockChainStore(state_dir)
     network = BSV_MAINNET
+    #network = BSV_REGTEST
 
     if 1:
         host_port_q = dns_bootstrap_host_port_q(network)
     else:
         host_port_q = asyncio.Queue()
-        host_port_q.put_nowait(("127.0.0.1", network['DEFAULT_PORT']))
-        host_port_q.put_nowait(network['SEEDS'][1])
+        #host_port_q.put_nowait(("127.0.0.1", network['DEFAULT_PORT']))
+        if len(network['SEEDS']) > 1:
+            host_port_q.put_nowait(network['SEEDS'][1])
 
     def should_download_block_f(block_hash, block_index):
         return block_index >= args.fast_forward
