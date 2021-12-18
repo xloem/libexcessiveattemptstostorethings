@@ -1,10 +1,11 @@
-import asyncio, binascii, io, logging
+import asyncio, binascii, io, logging, random
 
 import pycoin, pycoinnet
 from pycoinnet.examples.Client import Client
 from pycoinnet.util.BlockChainStore import BlockChainStore
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.peergroup.TxHandler import TxHandler
+from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
 
 BitcoinSV = dict(
     netmagic = binascii.unhexlify('E3E1F3E8'),
@@ -290,7 +291,6 @@ class PycoinnetClient:
 
         await self.init_data_fut
 
-
     async def delete(self):
         del self.txhandler
         del self.client
@@ -303,6 +303,18 @@ class PycoinnetClient:
         return self.block_chain_store.getheader(height)
 
     # ...
+
+    async def tx(self, blockchash, blockheight, txhash, txpos, verbose = False):
+        assert verbose == False
+        item = InvItem(ITEM_TYPE_TX, pycoin.serialize.h2b_rev(txhash))
+        peer_fetchers = [*self.client.inv_collector.fetchers_by_peer.items()]
+        random.shuffle(peer_fetchers)
+        for peer, fetcher in peer_fetchers:
+            tx = await fetcher.fetch(item, timeout=10)
+            if tx is not None:
+                return tx
+            else:
+                print(f'{peer} does not have {txhash}?')
 
     async def broadcast(self, txbytes) -> str:
         tx = pycoin.tx.Tx.parse(io.BytesIO(txbytes))
