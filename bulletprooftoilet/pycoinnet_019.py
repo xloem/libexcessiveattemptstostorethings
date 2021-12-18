@@ -1,4 +1,4 @@
-import asyncio, binascii, io
+import asyncio, binascii, io, logging
 
 import pycoin, pycoinnet
 from pycoinnet.examples.Client import Client
@@ -265,6 +265,7 @@ class PycoinnetClient:
         )
         #self.block_chain_store = pycoinnet.util.BlockChainStore.BlockChainStore('pycoinnet-state')
         self.block_chain_store = InMemoryBlockChainStore()
+        self.logger = logging.getLogger(f'{self.__class__.__name__}_019')
 
     async def init(self):
         self.host_port_q = pycoinnet.helpers.dnsbootstrap.dns_bootstrap_host_port_q(self.network)
