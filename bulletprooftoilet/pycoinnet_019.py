@@ -4,6 +4,7 @@ import pycoin, pycoinnet
 from pycoinnet.examples.Client import Client
 from pycoinnet.util.BlockChainStore import BlockChainStore
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
+from pycoinnet.peergroup.TxHandler import TxHandler
 
 BitcoinSV = dict(
     netmagic = binascii.unhexlify('E3E1F3E8'),
@@ -276,7 +277,17 @@ class PycoinnetClient:
         self.should_download_block_f = self.should_download_block_f
 
         self.client = pycoinnet.examples.Client.Client(self.network, self.host_port_q, self.should_download_block_f, self.block_chain_store, self.do_chain_update)
+        self.txhandler = TxHandler(self.client.inv_collector, {})
+
+        original_add_peer = self.client.inv_collector.add_peer
+        def hack_to_get_add_peer_callbacks(peer):
+            original_add_peer(peer)
+            self.add_peer(peer)
+        self.client.inv_collector.add_peer = hack_to_get_add_peer_callbacks
+
+
     async def delete(self):
+        del self.txhandler
         del self.client
         del self.host_port_q
 
@@ -285,6 +296,13 @@ class PycoinnetClient:
 
     async def header(self, height):
         return self.block_chain_store.getheader(height)
+
+    # ...
+
+    async def broadcast(self, txbytes) -> str:
+        tx = pycoin.tx.Tx.parse(io.BytesIO(txbytes))
+        self.txhandler.add_tx(tx)
+        return tx.id()
 
     def should_download_block_f(self, block_hash, block_index):
         print(f'should download block? {block_index} {block_hash}')
@@ -302,9 +320,11 @@ class PycoinnetClient:
             print(f'do_update {ops[0]}')
         else:
             print('do_update !')
+    def add_peer(self, peer):
+        self.txhandler.add_peer(peer)
 
 def quickbsv():
-    return PycoinnetClient(BitcoinSV['netmagic'], BitcoinSV['dns_bootstrap_hosts'], BitcoinSV['seed_host_port_pairs'][:5], BitcoinSV['default_port'])
+    return PycoinnetClient(BitcoinSV['netmagic'], BitcoinSV['dns_bootstrap_hosts'], BitcoinSV['seed_host_port_pairs'][:5], BitcoinSV['default_port'], BitcoinSV['coin'])
 
 try:
     import numpy as np # for InMemoryBlockChainStore
@@ -367,7 +387,7 @@ class InMemoryBlockChainStore(pycoinnet.util.BlockChainStore.BlockChainStore):
     def height(self):
         return self._blockhashes.height()
     def gethash(self, idx):
-        return self._blockhashe.get(idx)
+        return self._blockhashes.get(idx)
     def sethash(self, idx, hashbytes):
         if self._blockhashes.get(idx) != hashbytes:
             assert not self._blockhashes.is_set(idx) or hashbytes == self.parent_to_0
