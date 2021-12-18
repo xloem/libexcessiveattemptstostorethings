@@ -303,6 +303,9 @@ class PycoinnetClient:
         else:
             print('do_update !')
 
+def quickbsv():
+    return PycoinnetClient(BitcoinSV['netmagic'], BitcoinSV['dns_bootstrap_hosts'], BitcoinSV['seed_host_port_pairs'][:5], BitcoinSV['default_port'])
+
 try:
     import numpy as np # for InMemoryBlockChainStore
     class BufVec:
@@ -366,7 +369,7 @@ class InMemoryBlockChainStore(pycoinnet.util.BlockChainStore.BlockChainStore):
     def gethash(self, idx):
         return self._blockhashe.get(idx)
     def sethash(self, idx, hashbytes):
-        if self._blockhashes[idx] != hashbytes:
+        if self._blockhashes.get(idx) != hashbytes:
             assert not self._blockhashes.is_set(idx) or hashbytes == self.parent_to_0
             self._blockhashes.set(idx, hashbytes)
     def getheader(self, idx):
