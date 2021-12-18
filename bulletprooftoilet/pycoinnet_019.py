@@ -276,6 +276,8 @@ class PycoinnetClient:
         self.do_chain_update = self.do_chain_update
         self.should_download_block_f = self.should_download_block_f
 
+        self.init_data_fut = asyncio.Future()
+
         self.client = pycoinnet.examples.Client.Client(self.network, self.host_port_q, self.should_download_block_f, self.block_chain_store, self.do_chain_update)
         self.txhandler = TxHandler(self.client.inv_collector, {})
 
@@ -284,6 +286,8 @@ class PycoinnetClient:
             original_add_peer(peer)
             self.add_peer(peer)
         self.client.inv_collector.add_peer = hack_to_get_add_peer_callbacks
+
+        await self.init_data_fut
 
 
     async def delete(self):
@@ -318,6 +322,8 @@ class PycoinnetClient:
                     self.block_chain_store.remove(height)
         if len(ops) > 0:
             print(f'do_update {ops[0]}')
+            if not self.init_data_fut.done():
+                self.init_data_fut.set_result(True)
         else:
             print('do_update !')
     def add_peer(self, peer):
