@@ -7,6 +7,11 @@ from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 from pycoinnet.peergroup.TxHandler import TxHandler
 from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
 
+# pycoinnet 0.19 detect connection loss with ping
+# so warnings are issued from writes to closed connections
+# unless this is changed
+asyncio.constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES = float('inf')
+
 BitcoinSV = dict(
     netmagic = binascii.unhexlify('E3E1F3E8'),
     dns_bootstrap_hosts = [
