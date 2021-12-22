@@ -12,6 +12,63 @@ from pycoinnet.InvItem import InvItem, ITEM_TYPE_TX
 # unless this is changed
 asyncio.constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES = float('inf')
 
+# missing messages
+
+# definitions of message structures and types
+# L: 4 byte long integer
+# Q: 8 byte long integer
+# S: unicode string
+# [v]: array of InvItem objects
+# [LA]: array of (L, PeerAddress) tuples
+# b: boolean
+# A: PeerAddress object
+# B: Block object
+# T: Tx object
+# #: 32 byte hash
+# [#]: array of 32 byte hashes preceded by a count
+# z: block header
+# I: varint
+# [zI]: array of block headers and TRANSACTION COUNTS ['headers' packet]
+# [1]: arbitrary buffer
+
+# reject b'027478400c7363726970747075626b6579c75c5c8e4e13e920f492ed29d8db677f1cdde70f6559bfbf6a39a5d785284c4f'
+additional_message_structs = dict(
+    reject = "message:S ccode:1 reason:S hash:*"
+)
+additional_message_parsers = {
+    name : pycoinnet.message._make_parser(struct)
+    for name, struct in additional_message_structs.items()
+}
+REJECT_CCODES = {
+    0x01: 'MALFORMED',
+    0x10: 'INVALID',
+    0x11: 'OBSOLETE',
+    0x12: 'DUPLICATE',
+    0x40: 'NONSTANDARD',
+    0x41: 'DUST',
+    0x42: 'INSUFFICIENTFEE',
+    0x43: 'CHECKPOINT',
+}
+
+from pycoin.serialize import bitcoin_streamer
+bitcoin_streamer.BITCOIN_STREAMER.register_functions([
+    ('*', (lambda f: f.read(), lambda f, b: f.write(b)))
+])
+
+orig_parse_from_data = pycoinnet.message.parse_from_data
+def parse_additional_messages_from_data(message_name, data):
+    #print('message:', message_name)
+    additional_parser = additional_message_parsers.get(message_name)
+    if additional_parser:
+        import pdb; pdb.set_trace()
+        message_stream = io.BytesIO(data)
+        d = additional_parser(message_stream)
+    else:
+        d = orig_parse_from_data(message_name, data)
+    return d
+pycoinnet.message.parse_from_data = parse_additional_messages_from_data
+pycoinnet.peer.BitcoinPeerProtocol.parse_from_data = pycoinnet.message.parse_from_data
+
 BitcoinSV = dict(
     netmagic = binascii.unhexlify('E3E1F3E8'),
     dns_bootstrap_hosts = [
@@ -289,10 +346,27 @@ class PycoinnetClient:
         self.txhandler = TxHandler(self.client.inv_collector, {})
 
         original_add_peer = self.client.inv_collector.add_peer
-        def hack_to_get_add_peer_callbacks(peer):
+        def hack_to_get_add_peer_callbacks_and_tx_rejects(peer):
             original_add_peer(peer)
             self.add_peer(peer)
-        self.client.inv_collector.add_peer = hack_to_get_add_peer_callbacks
+
+            q2 = asyncio.Queue()
+            def _watch_peer2(peer, next_message):
+                while True:
+                    name, data = yield from next_message()
+                    if name == 'reject':
+                        import pdb; pdb.set_trace()
+                        # this is a reject from one peer
+                       # they are kept in tiny databases such as self.inv_item_db
+                        # let's verify the reject message fields
+                        # ccodes are in REJECT_CCODES
+                        pass
+            next_message = peer.new_get_next_message_f(lambda name, data: name in ('reject,'))
+            peer.add_task(_watch_peer2(peer, next_message))
+
+
+        self.client.inv_collector.add_peer = hack_to_get_add_peer_callbacks_and_tx_rejects
+
 
         await self.init_data_fut
 
