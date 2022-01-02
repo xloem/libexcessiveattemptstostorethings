@@ -150,6 +150,7 @@ class ElectrumClient:
         try:
             txid = await self.request(str, 'blockchain.transaction.broadcast', txbytes.hex())
         except aiorpcx.jsonrpc.RPCError as error:
+            txid = Tx.from_bytes(txbytes).hash_hex
             if error.code == 1: # BAD_REQUEST
                 if 'too-long-mempool-chain' in error.message:
                     raise TooLongMempoolChain()
@@ -159,7 +160,6 @@ class ElectrumClient:
                     self.logger.error(f'{txid} IS A DOUBLE SPEND')
                     raise MempoolConflict()
                 elif 'Transaction already in the mempool' in error.message:
-                    txid = Tx.from_bytes(txbytes).hash_hex
                     self.logger.error(f'{txid} SENT TO MEMPOOL ALREADY CONTAINING IT')
             raise
         return txid
