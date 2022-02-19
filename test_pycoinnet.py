@@ -267,6 +267,7 @@ from pycoinnet.util.BlockChainStore import BlockChainStore
 from pycoinnet.helpers.dnsbootstrap import dns_bootstrap_host_port_q
 
 async def main():
+#def main():
     #asyncio.tasks._DEBUG = True
     #logging.basicConfig(level=logging.DEBUG)
     #logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -330,11 +331,16 @@ async def main():
 
     network = BSV_MAINNET
 
-    #host_port_q = pycoinnet.helpers.dnsbootstrap.dns_bootstrap_host_port_q(network)
-    host_port_q = asyncio.Queue()
-    host_port_q.put_nowait(network['SEEDS'][1])
+    #await asyncio.sleep(0)
+
+    host_port_q = pycoinnet.helpers.dnsbootstrap.dns_bootstrap_host_port_q(network)
+    #host_port_q = asyncio.Queue()
+    #host_port_q.put_nowait(network['SEEDS'][1])
     
     client = pycoinnet.examples.Client.Client(network, host_port_q, should_download_block_f, block_chain_store, do_update)
     await asyncio.sleep(60)
 
-asyncio.run(main())
+asyncio.get_event_loop().run_until_complete(main())
+#asyncio.run(main())
+#asyncio.get_event_loop().run_forever()
+#main()
