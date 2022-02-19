@@ -14,8 +14,10 @@ import logging, random, sys
 @click.option('--priv-key', default = '088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279', help='note: this private key is not private')
 @click.option('--coin', default='BitcoinSV', help='Name of coin to use')
 @click.option('--net', default='mainnet', help='Coin network to use')
+@click.option('--tag', help='Additional tag data to add as op_return outputs', multiple=True)
+@click.option('--prefix-null', default=True)
                         # note: this private key is not private
-async def main(no_strip = False, priv_key = '088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279', coin = 'BitcoinSV', net = 'mainnet'):
+async def main(no_strip = False, priv_key = '088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279', coin = 'BitcoinSV', net = 'mainnet', tag = (), prefix_null = True):
     priv_key = bitcoin.hex2privkey(priv_key)
     logging.basicConfig(level=logging.DEBUG)
 
@@ -44,7 +46,7 @@ async def main(no_strip = False, priv_key = '088412ca112561ff5db3db83e2756fe447d
     if not no_strip:
         data = waste.strip()
 
-    tx, unspent, fee, balance = bitcoin.op_return(priv_key, unspents, min_fee, fee_per_kb, waste, forkid = (coin is coins.BitcoinSV))
+    tx, unspent, fee, balance = bitcoin.op_return(priv_key, unspents, min_fee, fee_per_kb, waste, extra_lists_of_items = [[t] for t in tag], forkid = (coin is coins.BitcoinSV), add_null_prefix = prefix_null)
 
     txid = await blockchainmodule.blockchain.broadcast(tx.bytes)
 

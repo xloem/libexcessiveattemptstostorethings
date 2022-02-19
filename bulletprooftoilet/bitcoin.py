@@ -173,7 +173,21 @@ def bumped_fee(privkey, tx, utxos, min_fee, fee_per_kb, change_addr):
 
     return tx, fee, available - fee
 
-def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None, forkid = False):
+def bytes_to_op_return_script(*items, add_null_prefix = True):
+    script = bitcoinx.Script()
+    if add_null_prefix:
+        script = script << 0
+    script = script << bitcoinx.OP_RETURN
+    for item in items:
+        if type(item) is not bytes:
+            if type(item) is not str:
+                item = str(item)
+            item = bytes(item, 'utf-8')
+        script = script << item
+    return script
+
+
+def op_return(privkey, unspents, min_fee, fee_per_kb, *items, extra_lists_of_items = [], change_addr = None, fee_output_idx = 1, forkid = False, add_null_prefix = True):
     privkey = PrivateKey(privkey)
     pubkey = privkey.pub
     if change_addr is None:
@@ -187,20 +201,13 @@ def op_return(privkey, unspents, min_fee, fee_per_kb, *items, change_addr = None
         value += unspent.amount
         inputs.append(bitcoinx.TxInput(bytes.fromhex(unspent.txid)[::-1], unspent.txindex, scriptpubkey, 0))
 
-    script = bitcoinx.Script() << 0 << bitcoinx.OP_RETURN
-    for item in items:
-        if type(item) is not bytes:
-            if type(item) is not str:
-                item = str(item)
-            item = bytes(item, 'utf-8')
-        script = script << item
-    data_output = bitcoinx.TxOutput(0, script)
+    lists_of_items = [items, *extra_lists_of_items]
+    outputs = []
+    for items in lists_of_items:
+        script = bytes_to_op_return_script(*items, add_null_prefix = add_null_prefix)
+        outputs.append(bitcoinx.TxOutput(0, script))
     fee_output = bitcoinx.TxOutput(value, change_addr.to_script())
-    data_output_idx = 0
-    fee_output_idx = 1
-    outputs = [None, None]
-    outputs[data_output_idx] = data_output
-    outputs[fee_output_idx] = fee_output
+    outputs.insert(fee_output_idx, fee_output)
     tx = bitcoinx.Tx(1, inputs, outputs, 0)
     
     #fee = await blockchain.estimate_fee(len(tx.to_bytes()), 6, 0.25)#int(fee_per_kb * len(tx.to_bytes()) / 1024)
