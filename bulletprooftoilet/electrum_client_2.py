@@ -222,6 +222,9 @@ class ElectrumClient:
     async def addr_history(self, addr):
         # all txs including mempool
         script = self.addr_to_p2pkh(addr)
+        return await self.output_history(script)
+
+    async def output_history(self, script):
         scripthash = self.script_to_scripthash(script)
         # presently a list of dicts containing 'tx_hash', 'height', and 'fee'
         return await self.request(list, 'blockchain.scripthash.get_history', scripthash)
