@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import asyncio, random
+import asyncio, logging, random, sys
 
+from bulletprooftoilet import pycoinnet_019
 from bulletprooftoilet import electrum_client_2
 from bulletprooftoilet import electrum_client
 from bulletprooftoilet import electrumx_client
@@ -13,9 +14,15 @@ from bulletprooftoilet import util
 
 import electrumx.lib.coins as coins
 
+#def excepthook(type, obj, tb):
+#    import pdb; pdb.set_trace()
+#sys.excepthook = excepthook
+
 async def main():
     # note: this private key is not private
     privkey = bitcoin.hex2privkey('088412ca112561ff5db3db83e2756fe447d36ba3c556e158c8f016a2934f7279')
+
+    logging.basicConfig(level=logging.DEBUG)
 
     #blockchainmodule = blockchain_module.BlockchainModule(electrum_client.Electrum(electrum))
     #blockchainmodule = blockchain_module.BlockchainModule(electrum_client.ElectrumSV())
@@ -30,19 +37,24 @@ async def main():
             break
         except OSError:
             continue
+    pycoinnet_019.BitcoinSV['seed_host_port_pairs'] = pycoinnet_019.BitcoinSV['seed_host_port_pairs'][:5]
+    backup_client = pycoinnet_019.PycoinnetClient(**pycoinnet_019.BitcoinSV)
+    await backup_client.init()
+    blockchainmodule.blockchain.broadcast = backup_client.broadcast
 
     bm0 = await blockchainmodule.submodules()
     bm1 = await bm0[0].submodules();
     BJPG_TXID = 'a3907e5b910f798c8d0fb450d483a0aefa5ce40ac74064b377603e5ea51deccb'
-    print('block 0 txids:', [txid async for txid in bm1[0].items()])
-    example_height = 100002
-    print(f'block {example_height} txids:', [txid async for txid in bm1[example_height].items()])
-    print('downloading a jpeg image from transaction ' + BJPG_TXID)
-    tx = await blockchainmodule.blockchain.tx(None, None, BJPG_TXID, None)
-    BJPG = bitcom.B.from_tx(tx)
-    with open(f'{BJPG_TXID}.jpg', 'wb') as jpgout:
-        jpgout.write(BJPG.data)
-        print(f'wrote {BJPG.media_type} to {BJPG_TXID}.jpg')
+    #print('block 0 txids:', [txid async for txid in bm1[0].items()])
+    #example_height = 100002
+    #print(f'block {example_height} txids:', [txid async for txid in bm1[example_height].items()])
+
+    #print('downloading a jpeg image from transaction ' + BJPG_TXID)
+    #tx = await blockchainmodule.blockchain.tx(None, None, BJPG_TXID, None)
+    #BJPG = bitcom.B.from_tx(tx)
+    #with open(f'{BJPG_TXID}.jpg', 'wb') as jpgout:
+    #    jpgout.write(BJPG.data)
+    #    print(f'wrote {BJPG.media_type} to {BJPG_TXID}.jpg')
 
     blockchain = blockchainmodule.blockchain
     scripthash = blockchain.addr_to_scripthash(bitcoin.privkey2addr(privkey))
@@ -92,4 +104,5 @@ async def main():
         if not in_chain and not in_mempool:
             print('tx lost?')
 
-asyncio.run(main())
+asyncio.get_event_loop().run_until_complete(main())
+#asyncio.run(main())
